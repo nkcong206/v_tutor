@@ -1,0 +1,20 @@
+# Core FastAPI dependencies
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+pydantic-settings
+
+# Database
+sqlalchemy
+
+# AI - OpenAI only
+openai
+
+# Authentication & Security
+python-jose[cryptography]
+passlib[bcrypt]
+python-dotenv
+
+# Utilities
+httpx
