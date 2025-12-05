@@ -48,10 +48,14 @@ export function StudentPage() {
     const [suggestedPrompts, setSuggestedPrompts] = useState<string[]>([
         "Em chưa hiểu đề bài lắm",
         "Giải thích từ khóa trong đề",
-        "Gợi ý cách làm"
+        "Gợi ý cách làm",
+        "Hỏi thêm"
     ]);
     const [attemptCounts, setAttemptCounts] = useState<Record<number, number>>({});
+    const [isChatOpen, setIsChatOpen] = useState(false);
+    const [latestBubble, setLatestBubble] = useState<string | null>(null);
     const chatEndRef = useRef<HTMLDivElement>(null);
+    const abortControllerRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
         if (examId && isStarted) {
@@ -105,37 +109,100 @@ export function StudentPage() {
             const newAttempts = (attemptCounts[questionId] || 0) + 1;
             setAttemptCounts({ ...attemptCounts, [questionId]: newAttempts });
 
-            // Check if answer is correct (we need to get this from somewhere)
+            // Check if answer is correct
             const question = questions.find(q => q.id === questionId);
             if (question) {
-                // Send to AI tutor about the selection
-                const isCorrect = question.correct_answer === answer;
-                sendChatMessage(
-                    isCorrect
-                        ? `Em đã chọn đáp án ${answer}`
-                        : `Em chọn ${answer}`,
-                    questionId,
-                    answer,
-                    isCorrect,
-                    newAttempts
-                );
+                // Check if answer is correct (handle "A" vs "A. Answer content")
+                const isCorrect = question.correct_answer === answer || question.correct_answer?.startsWith(answer + '.');
+
+                // DEBUG LOG
+                console.log('=== DEBUG SELECT ANSWER ===');
+                console.log('Question:', question.text);
+                console.log('Selected answer:', answer);
+                console.log('Correct answer from API:', question.correct_answer);
+                console.log('Is correct:', isCorrect);
+                console.log('Options:', question.options);
+                console.log('===========================');
+
+                // Send context to AI silently (don't show "Em chọn X" in chat)
+                sendContextToAI(questionId, answer, isCorrect, newAttempts);
             }
         }
     };
 
-    const sendChatMessage = async (
-        message: string,
-        questionId?: number,
-        selectedAnswer?: string,
-        isCorrect?: boolean,
-        attemptCount?: number
+    // Silent context update - only shows AI response, not the trigger
+    const sendContextToAI = async (
+        questionId: number,
+        selectedAnswer: string,
+        isCorrect: boolean,
+        attemptCount: number
     ) => {
+        const question = questions.find(q => q.id === questionId);
+        if (!question) return;
+
+        // Find the full option text (e.g., "A. 3" from answer "A")
+        const selectedOption = question.options.find((opt: string) => opt.startsWith(selectedAnswer + '.')) || selectedAnswer;
+        const correctOption = question.options.find((opt: string) => opt.startsWith(question.correct_answer + '.')) || question.correct_answer;
+
+        // Abort previous request if exists
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+        }
+
+        // Create new controller
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
+        setIsChatLoading(true);
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/tutor/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                signal: controller.signal,
+                body: JSON.stringify({
+                    exam_id: examId,
+                    question_id: questionId,
+                    student_name: studentName,
+                    message: `[Học sinh chọn: ${selectedOption}]`,
+                    question_text: question.text,
+                    options: question.options,
+                    selected_answer: selectedOption,
+                    correct_answer: correctOption,
+                    is_correct: isCorrect,
+                    attempt_count: attemptCount
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                const aiMessage = data.response;
+                setChatMessages(prev => [...prev, { role: 'assistant', content: aiMessage }]);
+                setSuggestedPrompts(data.suggested_prompts);
+
+                if (!isChatOpen) {
+                    setLatestBubble(aiMessage);
+                }
+            }
+        } catch (err: any) {
+            if (err.name === 'AbortError') return;
+            console.error('Chat error:', err);
+        } finally {
+            if (abortControllerRef.current === controller) {
+                setIsChatLoading(false);
+                abortControllerRef.current = null;
+            }
+        }
+    };
+
+    // User-initiated chat message (visible in chat)
+    const sendChatMessage = async (message: string) => {
         if (!message.trim()) return;
 
         const question = questions[currentQuestion];
         if (!question) return;
 
-        // Add user message to chat
+        // Add user message to visible chat
         setChatMessages(prev => [...prev, { role: 'user', content: message }]);
         setChatInput('');
         setIsChatLoading(true);
@@ -146,14 +213,14 @@ export function StudentPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     exam_id: examId,
-                    question_id: questionId || question.id,
+                    question_id: question.id,
                     student_name: studentName,
                     message: message,
                     question_text: question.text,
                     options: question.options,
-                    selected_answer: selectedAnswer || answers[question.id.toString()],
-                    is_correct: isCorrect,
-                    attempt_count: attemptCount || attemptCounts[question.id] || 0
+                    selected_answer: answers[question.id.toString()],
+                    is_correct: question.correct_answer === answers[question.id.toString()] || question.correct_answer?.startsWith(answers[question.id.toString()] + '.'),
+                    attempt_count: attemptCounts[question.id] || 0
                 })
             });
 
@@ -394,311 +461,376 @@ export function StudentPage() {
         );
     }
 
-    // Exam Screen with AI Tutor
+    // Exam Screen with Floating AI Tutor
     const question = questions[currentQuestion];
     const progress = ((currentQuestion + 1) / questions.length) * 100;
     const answeredCount = Object.keys(answers).length;
 
     return (
-        <div style={{ minHeight: '100vh', background: '#F3F4F6', display: 'flex' }}>
-            {/* Main Exam Area */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                {/* Header */}
-                <div style={{
-                    background: 'white',
-                    borderBottom: '1px solid #E5E7EB',
-                    padding: '16px 24px'
-                }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <div>
-                            <p style={{ fontSize: '14px', color: '#6B7280' }}>Học sinh: {studentName}</p>
-                            <p style={{ fontWeight: '500' }}>Câu {currentQuestion + 1}/{questions.length}</p>
-                        </div>
-                        <div style={{ textAlign: 'right' }}>
-                            <p style={{ fontSize: '14px', color: '#6B7280' }}>Đã trả lời</p>
-                            <p style={{ fontWeight: '500' }}>{answeredCount}/{questions.length}</p>
-                        </div>
+        <div style={{ minHeight: '100vh', background: '#F3F4F6', position: 'relative' }}>
+            {/* Header */}
+            <div style={{
+                background: 'white',
+                borderBottom: '1px solid #E5E7EB',
+                padding: '16px 24px'
+            }}>
+                <div style={{ maxWidth: '800px', margin: '0 auto', display: 'flex', justifyContent: 'space-between' }}>
+                    <div>
+                        <p style={{ fontSize: '14px', color: '#6B7280' }}>Học sinh: {studentName}</p>
+                        <p style={{ fontWeight: '500' }}>Câu {currentQuestion + 1}/{questions.length}</p>
                     </div>
-                    {/* Progress Bar */}
-                    <div style={{ marginTop: '12px', height: '4px', background: '#E5E7EB', borderRadius: '2px' }}>
-                        <div style={{ width: `${progress}%`, height: '100%', background: '#4F46E5', borderRadius: '2px', transition: 'width 0.3s' }} />
+                    <div style={{ textAlign: 'right' }}>
+                        <p style={{ fontSize: '14px', color: '#6B7280' }}>Đã trả lời</p>
+                        <p style={{ fontWeight: '500' }}>{answeredCount}/{questions.length}</p>
                     </div>
                 </div>
+                {/* Progress Bar */}
+                <div style={{ maxWidth: '800px', margin: '12px auto 0', height: '4px', background: '#E5E7EB', borderRadius: '2px' }}>
+                    <div style={{ width: `${progress}%`, height: '100%', background: '#4F46E5', borderRadius: '2px', transition: 'width 0.3s' }} />
+                </div>
+            </div>
 
-                {/* Question */}
-                <div style={{ flex: 1, padding: '24px', overflow: 'auto' }}>
-                    {question && (
+            {/* Question */}
+            <div style={{ maxWidth: '800px', margin: '0 auto', padding: '24px' }}>
+                {question && (
+                    <div style={{
+                        background: 'white',
+                        borderRadius: '16px',
+                        padding: '32px',
+                        boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+                    }}>
+                        <h2 style={{ fontSize: '18px', marginBottom: '24px' }}>
+                            <span style={{ color: '#4F46E5' }}>Câu {currentQuestion + 1}:</span> {question.text}
+                        </h2>
+
+                        {/* Options */}
+                        <div style={{ marginBottom: '32px' }}>
+                            {question.options.map((option: string, idx: number) => {
+                                const optionLetter = option.charAt(0);
+                                const isSelected = answers[question.id.toString()] === optionLetter;
+
+                                return (
+                                    <button
+                                        key={idx}
+                                        onClick={() => selectAnswer(question.id, optionLetter)}
+                                        style={{
+                                            width: '100%',
+                                            padding: '16px',
+                                            textAlign: 'left',
+                                            borderRadius: '10px',
+                                            border: isSelected ? '2px solid #4F46E5' : '2px solid #E5E7EB',
+                                            background: isSelected ? '#EEF2FF' : 'white',
+                                            marginBottom: '12px',
+                                            cursor: 'pointer',
+                                            fontSize: '15px',
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        {option}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {/* Navigation */}
                         <div style={{
-                            background: 'white',
-                            borderRadius: '16px',
-                            padding: '32px',
-                            boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
-                            maxWidth: '700px',
-                            margin: '0 auto'
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            paddingTop: '24px',
+                            borderTop: '1px solid #E5E7EB'
                         }}>
-                            <h2 style={{ fontSize: '18px', marginBottom: '24px' }}>
-                                <span style={{ color: '#4F46E5' }}>Câu {currentQuestion + 1}:</span> {question.text}
-                            </h2>
+                            <button
+                                onClick={() => setCurrentQuestion(Math.max(0, currentQuestion - 1))}
+                                disabled={currentQuestion === 0}
+                                style={{
+                                    padding: '12px 24px',
+                                    background: currentQuestion === 0 ? '#E5E7EB' : 'white',
+                                    border: '1px solid #D1D5DB',
+                                    borderRadius: '8px',
+                                    cursor: currentQuestion === 0 ? 'not-allowed' : 'pointer'
+                                }}
+                            >
+                                ← Câu trước
+                            </button>
 
-                            {/* Options */}
-                            <div style={{ marginBottom: '32px' }}>
-                                {question.options.map((option, idx) => {
-                                    const optionLetter = option.charAt(0);
-                                    const isSelected = answers[question.id.toString()] === optionLetter;
-
-                                    return (
-                                        <button
-                                            key={idx}
-                                            onClick={() => selectAnswer(question.id, optionLetter)}
-                                            style={{
-                                                width: '100%',
-                                                padding: '16px',
-                                                textAlign: 'left',
-                                                borderRadius: '10px',
-                                                border: isSelected ? '2px solid #4F46E5' : '2px solid #E5E7EB',
-                                                background: isSelected ? '#EEF2FF' : 'white',
-                                                marginBottom: '12px',
-                                                cursor: 'pointer',
-                                                fontSize: '15px',
-                                                transition: 'all 0.2s'
-                                            }}
-                                        >
-                                            {option}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-
-                            {/* Navigation */}
-                            <div style={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                paddingTop: '24px',
-                                borderTop: '1px solid #E5E7EB'
-                            }}>
+                            {currentQuestion < questions.length - 1 ? (
                                 <button
-                                    onClick={() => setCurrentQuestion(Math.max(0, currentQuestion - 1))}
-                                    disabled={currentQuestion === 0}
+                                    onClick={() => setCurrentQuestion(currentQuestion + 1)}
                                     style={{
                                         padding: '12px 24px',
-                                        background: currentQuestion === 0 ? '#E5E7EB' : 'white',
-                                        border: '1px solid #D1D5DB',
+                                        background: '#4F46E5',
+                                        color: 'white',
+                                        border: 'none',
                                         borderRadius: '8px',
-                                        cursor: currentQuestion === 0 ? 'not-allowed' : 'pointer'
+                                        cursor: 'pointer',
+                                        fontWeight: '500'
                                     }}
                                 >
-                                    ← Câu trước
+                                    Câu tiếp →
                                 </button>
-
-                                {currentQuestion < questions.length - 1 ? (
-                                    <button
-                                        onClick={() => setCurrentQuestion(currentQuestion + 1)}
-                                        style={{
-                                            padding: '12px 24px',
-                                            background: '#4F46E5',
-                                            color: 'white',
-                                            border: 'none',
-                                            borderRadius: '8px',
-                                            cursor: 'pointer',
-                                            fontWeight: '500'
-                                        }}
-                                    >
-                                        Câu tiếp →
-                                    </button>
-                                ) : (
-                                    <button
-                                        onClick={handleSubmit}
-                                        disabled={isSubmitting || answeredCount < questions.length}
-                                        style={{
-                                            padding: '12px 24px',
-                                            background: (isSubmitting || answeredCount < questions.length) ? '#9CA3AF' : '#059669',
-                                            color: 'white',
-                                            border: 'none',
-                                            borderRadius: '8px',
-                                            cursor: (isSubmitting || answeredCount < questions.length) ? 'not-allowed' : 'pointer',
-                                            fontWeight: '500'
-                                        }}
-                                    >
-                                        {isSubmitting ? '⏳ Đang nộp...' : '✓ Nộp bài'}
-                                    </button>
-                                )}
-                            </div>
-
-                            {/* Question Navigation Dots */}
-                            <div style={{
-                                display: 'flex',
-                                flexWrap: 'wrap',
-                                gap: '8px',
-                                justifyContent: 'center',
-                                marginTop: '24px',
-                                paddingTop: '24px',
-                                borderTop: '1px solid #E5E7EB'
-                            }}>
-                                {questions.map((q, idx) => {
-                                    const isAnswered = answers[q.id.toString()];
-                                    const isCurrent = idx === currentQuestion;
-
-                                    return (
-                                        <button
-                                            key={idx}
-                                            onClick={() => setCurrentQuestion(idx)}
-                                            style={{
-                                                width: '36px',
-                                                height: '36px',
-                                                borderRadius: '50%',
-                                                border: 'none',
-                                                background: isCurrent ? '#4F46E5' : isAnswered ? '#059669' : '#E5E7EB',
-                                                color: (isCurrent || isAnswered) ? 'white' : '#374151',
-                                                fontWeight: '500',
-                                                cursor: 'pointer'
-                                            }}
-                                        >
-                                            {idx + 1}
-                                        </button>
-                                    );
-                                })}
-                            </div>
+                            ) : (
+                                <button
+                                    onClick={handleSubmit}
+                                    disabled={isSubmitting || answeredCount < questions.length}
+                                    style={{
+                                        padding: '12px 24px',
+                                        background: (isSubmitting || answeredCount < questions.length) ? '#9CA3AF' : '#059669',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '8px',
+                                        cursor: (isSubmitting || answeredCount < questions.length) ? 'not-allowed' : 'pointer',
+                                        fontWeight: '500'
+                                    }}
+                                >
+                                    {isSubmitting ? '⏳ Đang nộp...' : '✓ Nộp bài'}
+                                </button>
+                            )}
                         </div>
-                    )}
-                </div>
+
+                        {/* Question Navigation Dots */}
+                        <div style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: '8px',
+                            justifyContent: 'center',
+                            marginTop: '24px',
+                            paddingTop: '24px',
+                            borderTop: '1px solid #E5E7EB'
+                        }}>
+                            {questions.map((q: Question, idx: number) => {
+                                const isAnswered = answers[q.id.toString()];
+                                const isCurrent = idx === currentQuestion;
+
+                                return (
+                                    <button
+                                        key={idx}
+                                        onClick={() => setCurrentQuestion(idx)}
+                                        style={{
+                                            width: '36px',
+                                            height: '36px',
+                                            borderRadius: '50%',
+                                            border: 'none',
+                                            background: isCurrent ? '#4F46E5' : isAnswered ? '#059669' : '#E5E7EB',
+                                            color: (isCurrent || isAnswered) ? 'white' : '#374151',
+                                            fontWeight: '500',
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        {idx + 1}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
             </div>
 
-            {/* AI Tutor Chat Panel */}
-            <div style={{
-                width: '380px',
-                background: 'white',
-                borderLeft: '1px solid #E5E7EB',
-                display: 'flex',
-                flexDirection: 'column'
-            }}>
-                {/* Chat Header */}
-                <div style={{
-                    padding: '16px 20px',
-                    borderBottom: '1px solid #E5E7EB',
-                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                    color: 'white'
-                }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        🤖 AI Tutor
-                    </h3>
-                    <p style={{ fontSize: '12px', opacity: 0.9, marginTop: '4px' }}>
-                        Trợ lý học tập - Hỏi mình bất cứ điều gì!
+            {/* Floating AI Tutor Bubble Notification */}
+            {latestBubble && !isChatOpen && (
+                <div
+                    onClick={() => { setIsChatOpen(true); setLatestBubble(null); }}
+                    style={{
+                        position: 'fixed',
+                        bottom: '100px',
+                        right: '24px',
+                        maxWidth: '280px',
+                        padding: '12px 16px',
+                        background: 'white',
+                        borderRadius: '16px 16px 4px 16px',
+                        boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+                        cursor: 'pointer',
+                        animation: 'slideIn 0.3s ease',
+                        zIndex: 999
+                    }}
+                >
+                    <p style={{ fontSize: '13px', color: '#1F2937', margin: 0, lineHeight: 1.4 }}>
+                        🤖 {latestBubble.length > 100 ? latestBubble.slice(0, 100) + '...' : latestBubble}
                     </p>
                 </div>
+            )}
 
-                {/* Chat Messages */}
+            {/* Floating Chat Button */}
+            <button
+                onClick={() => { setIsChatOpen(!isChatOpen); setLatestBubble(null); }}
+                style={{
+                    position: 'fixed',
+                    bottom: '24px',
+                    right: '24px',
+                    width: '60px',
+                    height: '60px',
+                    borderRadius: '50%',
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    color: 'white',
+                    border: 'none',
+                    boxShadow: '0 4px 20px rgba(102, 126, 234, 0.4)',
+                    cursor: 'pointer',
+                    fontSize: '24px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1000,
+                    transition: 'transform 0.2s'
+                }}
+            >
+                {isChatOpen ? '✕' : '🤖'}
+            </button>
+
+            {/* Chat Popup */}
+            {isChatOpen && (
                 <div style={{
-                    flex: 1,
-                    overflow: 'auto',
-                    padding: '16px',
+                    position: 'fixed',
+                    bottom: '100px',
+                    right: '24px',
+                    width: '360px',
+                    height: '500px',
+                    background: 'white',
+                    borderRadius: '16px',
+                    boxShadow: '0 10px 40px rgba(0,0,0,0.2)',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '12px'
+                    overflow: 'hidden',
+                    zIndex: 999
                 }}>
-                    {chatMessages.map((msg, idx) => (
-                        <div
-                            key={idx}
-                            style={{
-                                alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
-                                maxWidth: '85%'
-                            }}
-                        >
-                            <div style={{
-                                padding: '12px 16px',
-                                borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                                background: msg.role === 'user' ? '#4F46E5' : '#F3F4F6',
-                                color: msg.role === 'user' ? 'white' : '#1F2937',
-                                fontSize: '14px',
-                                lineHeight: '1.5'
-                            }}>
-                                {msg.content}
-                            </div>
-                        </div>
-                    ))}
-                    {isChatLoading && (
-                        <div style={{ alignSelf: 'flex-start' }}>
-                            <div style={{
-                                padding: '12px 16px',
-                                borderRadius: '16px 16px 16px 4px',
-                                background: '#F3F4F6',
-                                color: '#6B7280',
-                                fontSize: '14px'
-                            }}>
-                                Đang suy nghĩ... 🤔
-                            </div>
-                        </div>
-                    )}
-                    <div ref={chatEndRef} />
-                </div>
+                    {/* Chat Header */}
+                    <div style={{
+                        padding: '16px 20px',
+                        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                        color: 'white'
+                    }}>
+                        <h3 style={{ fontSize: '16px', fontWeight: '600', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            🤖 AI Tutor
+                        </h3>
+                        <p style={{ fontSize: '12px', opacity: 0.9, marginTop: '4px', marginBottom: 0 }}>
+                            Hỏi mình bất cứ điều gì!
+                        </p>
+                    </div>
 
-                {/* Suggested Prompts */}
-                <div style={{
-                    padding: '12px 16px',
-                    borderTop: '1px solid #E5E7EB',
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    gap: '8px'
-                }}>
-                    {suggestedPrompts.map((prompt, idx) => (
-                        <button
-                            key={idx}
-                            onClick={() => sendChatMessage(prompt)}
+                    {/* Chat Messages */}
+                    <div style={{
+                        flex: 1,
+                        overflow: 'auto',
+                        padding: '16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px'
+                    }}>
+                        {chatMessages.map((msg: ChatMessage, idx: number) => (
+                            <div
+                                key={idx}
+                                style={{
+                                    alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                                    maxWidth: '85%'
+                                }}
+                            >
+                                <div style={{
+                                    padding: '10px 14px',
+                                    borderRadius: msg.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
+                                    background: msg.role === 'user' ? '#4F46E5' : '#F3F4F6',
+                                    color: msg.role === 'user' ? 'white' : '#1F2937',
+                                    fontSize: '13px',
+                                    lineHeight: '1.4'
+                                }}>
+                                    {msg.content}
+                                </div>
+                            </div>
+                        ))}
+                        {isChatLoading && (
+                            <div style={{ alignSelf: 'flex-start' }}>
+                                <div style={{
+                                    padding: '10px 14px',
+                                    borderRadius: '14px 14px 14px 4px',
+                                    background: '#F3F4F6',
+                                    color: '#6B7280',
+                                    fontSize: '13px'
+                                }}>
+                                    Đang suy nghĩ... 🤔
+                                </div>
+                            </div>
+                        )}
+                        <div ref={chatEndRef} />
+                    </div>
+
+                    {/* Suggested Prompts */}
+                    <div style={{
+                        padding: '10px 14px',
+                        borderTop: '1px solid #E5E7EB',
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: '8px',
+                    }}>
+                        {suggestedPrompts.slice(0, 4).map((prompt: string, idx: number) => (
+                            <button
+                                key={idx}
+                                onClick={() => sendChatMessage(prompt)}
+                                disabled={isChatLoading}
+                                style={{
+                                    width: 'calc(50% - 4px)', // Force 2 items per row (accounting for gap)
+                                    padding: '6px 10px',
+                                    background: '#EEF2FF',
+                                    color: '#4F46E5',
+                                    border: '1px solid #C7D2FE',
+                                    borderRadius: '12px',
+                                    fontSize: '11px',
+                                    cursor: isChatLoading ? 'not-allowed' : 'pointer',
+                                    opacity: isChatLoading ? 0.5 : 1,
+                                    whiteSpace: 'normal', // Allow text wrapping
+                                    textAlign: 'left',
+                                    lineHeight: '1.3'
+                                }}
+                            >
+                                {prompt}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Chat Input */}
+                    <div style={{
+                        padding: '12px',
+                        borderTop: '1px solid #E5E7EB',
+                        display: 'flex',
+                        gap: '8px'
+                    }}>
+                        <input
+                            value={chatInput}
+                            onChange={(e) => setChatInput(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                    e.preventDefault();
+                                    if (!isChatLoading && chatInput.trim()) {
+                                        sendChatMessage(chatInput);
+                                    }
+                                }
+                            }}
+                            placeholder="Hỏi AI Tutor..."
                             disabled={isChatLoading}
                             style={{
-                                padding: '6px 12px',
-                                background: '#EEF2FF',
-                                color: '#4F46E5',
-                                border: '1px solid #C7D2FE',
-                                borderRadius: '16px',
-                                fontSize: '12px',
-                                cursor: isChatLoading ? 'not-allowed' : 'pointer',
-                                opacity: isChatLoading ? 0.5 : 1
+                                flex: 1,
+                                padding: '10px',
+                                borderRadius: '8px',
+                                border: '1px solid #E5E7EB',
+                                fontSize: '13px',
+                                outline: 'none'
+                            }}
+                        />
+                        <button
+                            onClick={() => sendChatMessage(chatInput)}
+                            disabled={isChatLoading || !chatInput.trim()}
+                            style={{
+                                padding: '10px 14px',
+                                background: (isChatLoading || !chatInput.trim()) ? '#E5E7EB' : '#4F46E5',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '8px',
+                                cursor: (isChatLoading || !chatInput.trim()) ? 'not-allowed' : 'pointer',
+                                fontWeight: '500',
+                                fontSize: '13px'
                             }}
                         >
-                            {prompt}
+                            Gửi
                         </button>
-                    ))}
+                    </div>
                 </div>
-
-                {/* Chat Input */}
-                <div style={{
-                    padding: '16px',
-                    borderTop: '1px solid #E5E7EB',
-                    display: 'flex',
-                    gap: '8px'
-                }}>
-                    <input
-                        value={chatInput}
-                        onChange={(e) => setChatInput(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendChatMessage(chatInput)}
-                        placeholder="Hỏi AI Tutor..."
-                        disabled={isChatLoading}
-                        style={{
-                            flex: 1,
-                            padding: '12px',
-                            borderRadius: '10px',
-                            border: '2px solid #E5E7EB',
-                            fontSize: '14px',
-                            outline: 'none'
-                        }}
-                    />
-                    <button
-                        onClick={() => sendChatMessage(chatInput)}
-                        disabled={isChatLoading || !chatInput.trim()}
-                        style={{
-                            padding: '12px 16px',
-                            background: (isChatLoading || !chatInput.trim()) ? '#E5E7EB' : '#4F46E5',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '10px',
-                            cursor: (isChatLoading || !chatInput.trim()) ? 'not-allowed' : 'pointer',
-                            fontWeight: '500'
-                        }}
-                    >
-                        Gửi
-                    </button>
-                </div>
-            </div>
+            )}
         </div>
     );
 }

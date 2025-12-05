@@ -1,20 +1,8 @@
-# Core FastAPI dependencies
 fastapi
 uvicorn[standard]
-python-multipart
-pydantic
-pydantic-settings
-
-# Database
 sqlalchemy
-
-# AI - OpenAI only
-openai
-
-# Authentication & Security
-python-jose[cryptography]
-passlib[bcrypt]
+pydantic
 python-dotenv
-
-# Utilities
-httpx
+python-multipart
+# AI & Cache
+openai

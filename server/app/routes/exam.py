@@ -1,7 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional, Dict
-from openai import OpenAI
 from app.config import settings
 from app.database import get_db
 from sqlalchemy.orm import Session
@@ -11,10 +10,16 @@ import re
 import uuid
 import hashlib
 from datetime import datetime
+import time
+import openai
+from openai import OpenAI
+
+# Use standard client for manual caching control
+# from gptcache.adapter.openai import OpenAI as GPTCacheOpenAI
 
 router = APIRouter(tags=["Exam"])
 
-# Configure OpenAI
+# Configure standard client
 client = OpenAI(api_key=settings.openai_api_key)
 
 # In-memory storage (in production, use database)
@@ -23,24 +28,28 @@ students_db: Dict[str, List[dict]] = {}  # exam_id -> list of student results
 teachers_db: Dict[str, dict] = {}  # teacher_id -> teacher info (name, created_at)
 teacher_exams_db: Dict[str, List[str]] = {}  # teacher_id -> list of exam_ids
 
+
 class CreateExamRequest(BaseModel):
     teacher_id: str
     teacher_name: str
     prompt: str
     question_count: int = 5
 
+
 class Question(BaseModel):
     id: int
     text: str
     options: List[str]
     correct_answer: str
-    explanation: str
+    explanation: Optional[str] = None
+
 
 class ExamResponse(BaseModel):
     exam_id: str
+    teacher_id: str
     student_url: str
-    questions: List[Question]
-    created_at: str
+    questions_count: int
+
 
 class StartExamRequest(BaseModel):
     student_name: str
@@ -91,58 +100,89 @@ async def register_teacher(request: RegisterTeacherRequest):
         "teacher_url": f"/giao_vien/{teacher_id}"
     }
 
+class ExamQuestionItem(BaseModel):
+    text: str
+    options: List[str]
+    correct_answer: str
+    explanation: str
+
+class ExamQuestionsResponse(BaseModel):
+    questions: List[ExamQuestionItem]
+
 @router.post("/create-exam", response_model=ExamResponse)
 async def create_exam(request: CreateExamRequest):
     """
     Teacher creates exam from prompt, returns student URL
     """
+    import time
+    
     try:
+        start_time = time.time()
+        
         system_prompt = """Bạn là một giáo viên chuyên nghiệp tạo câu hỏi trắc nghiệm.
 YÊU CẦU:
 1. Mỗi câu hỏi có 4 đáp án (A, B, C, D)
 2. Đáp án phải rõ ràng, chỉ có 1 đáp án đúng
 3. Câu hỏi phải có tính thực tiễn và sáng tạo
-4. Kèm giải thích chi tiết cho đáp án đúng
-
-Trả về ĐÚNG format JSON này (không thêm markdown, không thêm text nào khác):
-[
-  {
-    "text": "Câu hỏi...",
-    "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
-    "correct_answer": "A",
-    "explanation": "Giải thích chi tiết..."
-  }
-]
-
-QUAN TRỌNG: Chỉ trả về JSON array, không có text hay markdown nào khác!"""
+4. Kèm giải thích chi tiết cho đáp án đúng"""
 
         user_prompt = f"Tạo {request.question_count} câu hỏi trắc nghiệm về: {request.prompt}"
         
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.7
-        )
+        if not user_prompt:
+             raise HTTPException(status_code=400, detail="Prompt is required")
+             
+        # Manual Cache Check
+        from app.services.semantic_cache import get_cached_response, save_to_cache
         
-        response_text = response.choices[0].message.content.strip()
+        # Construct cache key
+        full_prompt_key = f"{system_prompt}\n---\n{user_prompt}"
+         
         
-        # Clean response
-        response_text = re.sub(r'^```json\s*', '', response_text)
-        response_text = re.sub(r'^```\s*', '', response_text)
-        response_text = re.sub(r'\s*```$', '', response_text)
-        response_text = response_text.strip()
+        cached_json = get_cached_response(full_prompt_key)
         
-        try:
-            questions_data = json.loads(response_text)
-        except json.JSONDecodeError:
-            json_match = re.search(r'\[[\s\S]*\]', response_text)
-            if json_match:
-                questions_data = json.loads(json_match.group(0))
-            else:
-                raise HTTPException(status_code=500, detail="AI không trả về đúng định dạng")
+        final_response_obj = None
+        
+        if cached_json:
+            print(f"✅ EXAM CACHE HIT (Key: {full_prompt_key[:30]}...)")
+            try:
+                # Deserialize from cached JSON
+                final_response_obj = ExamQuestionsResponse.model_validate_json(cached_json)
+            except Exception as e:
+                print(f"⚠️ Cache parse error: {e}")
+                # Fallback to API if cache corrupt
+                pass
+        
+        if not final_response_obj:
+            # Cache Miss - Call OpenAI
+            try:
+                # Use Beta Parse method for Structured Outputs
+                response = client.beta.chat.completions.parse(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    temperature=0.7,
+                    response_format=ExamQuestionsResponse
+                )
+                
+                final_response_obj = response.choices[0].message.parsed
+                
+                elapsed = time.time() - start_time
+                print(f"❌ EXAM CACHE MISS | Time: {elapsed:.3f}s")
+                
+                # Save to cache (serialize to JSON)
+                if final_response_obj:
+                    save_to_cache(full_prompt_key, final_response_obj.model_dump_json())
+                    
+            except Exception as e:
+                print(f"❌ OpenAI API Error: {e}")
+                raise HTTPException(status_code=500, detail=f"AI Error: {str(e)}")
+        
+        # Convert Pydantic model to dict list for processing
+        # The existing logic expects list of dicts with 'text', 'options' etc.
+        # final_response_obj.questions is List[ExamQuestionItem]
+        questions_data = [q.model_dump() for q in final_response_obj.questions]
         
         # Generate unique exam ID
         exam_id = str(uuid.uuid4())[:8]
@@ -181,9 +221,7 @@ QUAN TRỌNG: Chỉ trả về JSON array, không có text hay markdown nào kh�
             "exam_id": exam_id,
             "teacher_id": teacher_id,
             "student_url": f"/hoc_sinh/{exam_id}",
-            "teacher_url": f"/giao_vien/{teacher_id}",
-            "questions": questions,
-            "created_at": exams_db[exam_id]["created_at"]
+            "questions_count": len(questions)
         }
         
     except Exception as e:
@@ -193,20 +231,21 @@ QUAN TRỌNG: Chỉ trả về JSON array, không có text hay markdown nào kh�
 @router.get("/exam/{exam_id}")
 async def get_exam(exam_id: str):
     """
-    Get exam info (for students - without correct answers)
+    Get exam info (for students - includes correct answers for AI tutor)
     """
     if exam_id not in exams_db:
         raise HTTPException(status_code=404, detail="Không tìm thấy bài kiểm tra")
     
     exam = exams_db[exam_id]
     
-    # Return questions without correct answers and explanations
+    # Return questions with correct answer (for AI tutor to check)
     questions_for_student = []
     for q in exam["questions"]:
         questions_for_student.append({
             "id": q["id"],
             "text": q["text"],
-            "options": q["options"]
+            "options": q["options"],
+            "correct_answer": q["correct_answer"]  # Need this for AI tutor
         })
     
     return {

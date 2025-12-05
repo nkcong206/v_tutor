@@ -355,6 +355,14 @@ export function TeacherPage() {
                             placeholder="VD: Tạo 5 câu hỏi về phương trình bậc nhất cho lớp 8..."
                             value={prompt}
                             onChange={(e) => setPrompt(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                    e.preventDefault();
+                                    if (!isGenerating && prompt.trim()) {
+                                        handleGenerate();
+                                    }
+                                }
+                            }}
                             style={{
                                 width: '100%',
                                 minHeight: '100px',

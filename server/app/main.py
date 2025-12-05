@@ -31,8 +31,13 @@ app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads"
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database on startup"""
+    """Initialize database and cache on startup"""
     init_db()
+    
+    # Initialize Semantic Cache (Custom)
+    from app.services.semantic_cache import init_semantic_cache
+    init_semantic_cache()
+    
     print(f"🚀 {settings.app_name} is starting...")
     print(f"📚 Database: {settings.database_url}")
     print(f"🤖 AI Model: OpenAI")
