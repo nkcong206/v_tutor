@@ -526,7 +526,7 @@ export function TeacherPage() {
         }}>
             <ThemeToggle />
             {/* Header */}
-            <div style={{ maxWidth: '1400px', margin: '0 auto', marginBottom: '20px' }}>
+            <div style={{ maxWidth: '1600px', margin: '0 auto', marginBottom: '20px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <h1 style={{ color: 'white', fontSize: '24px', fontWeight: 'bold' }}>
@@ -537,55 +537,45 @@ export function TeacherPage() {
                     {teacherId && (
                         <div style={{
                             background: 'rgba(255, 255, 255, 0.2)',
-                            padding: '8px 16px',
-                            borderRadius: '30px',
+                            padding: '6px 12px',
+                            borderRadius: '6px',
                             color: 'white',
                             fontSize: '13px',
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '12px',
+                            gap: '8px',
                             backdropFilter: 'blur(5px)',
                             border: '1px solid rgba(255, 255, 255, 0.1)'
                         }}>
-                            <span style={{ fontWeight: 500, opacity: 0.9 }}>Link giáo viên:</span>
-                            <div style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                background: 'rgba(0,0,0,0.1)',
-                                padding: '4px 10px',
-                                borderRadius: '20px'
-                            }}>
-                                <code style={{ fontFamily: 'monospace', color: '#FFF' }}>
-                                    {window.location.origin}/giao_vien/{teacherId}
-                                </code>
-                                <button
-                                    onClick={copyTeacherLink}
-                                    style={{
-                                        background: copiedTeacherLink ? '#10B981' : 'rgba(255,255,255,0.2)',
-                                        border: 'none',
-                                        borderRadius: '50%',
-                                        width: '20px',
-                                        height: '20px',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        cursor: 'pointer',
-                                        padding: 0,
-                                        color: 'white',
-                                        transition: 'all 0.2s'
-                                    }}
-                                    title="Copy link"
-                                >
-                                    {copiedTeacherLink ? '✓' : '📋'}
-                                </button>
-                            </div>
+                            <code style={{ fontFamily: 'monospace', color: '#FFF' }}>
+                                {window.location.origin}/giao_vien/{teacherId}
+                            </code>
+                            <button
+                                onClick={copyTeacherLink}
+                                style={{
+                                    background: copiedTeacherLink ? '#10B981' : 'rgba(255,255,255,0.2)',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    width: '24px',
+                                    height: '24px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    cursor: 'pointer',
+                                    padding: 0,
+                                    color: 'white',
+                                    transition: 'all 0.2s'
+                                }}
+                                title="Copy link"
+                            >
+                                {copiedTeacherLink ? '✓' : '📋'}
+                            </button>
                         </div>
                     )}
                 </div>
             </div>
 
-            <div style={{ maxWidth: '1400px', margin: '0 auto', display: 'grid', gridTemplateColumns: '1fr 1fr 1.5fr', gap: '20px' }}>
+            <div style={{ maxWidth: '1600px', margin: '0 auto', display: 'grid', gridTemplateColumns: '1fr 1fr 1.5fr', gap: '20px' }}>
                 {/* Column 1: Create Exam */}
                 <div style={{
                     background: isDarkMode ? '#1F2937' : 'white',

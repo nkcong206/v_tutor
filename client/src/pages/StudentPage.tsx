@@ -467,7 +467,7 @@ export function StudentPage() {
                 padding: '20px'
             }}>
                 <ThemeToggle />
-                <div style={{ maxWidth: '700px', margin: '0 auto' }}>
+                <div style={{ maxWidth: '900px', margin: '0 auto' }}>
                     <div style={{
                         background: isDarkMode ? '#374151' : 'white',
                         borderRadius: '20px',
@@ -557,7 +557,7 @@ export function StudentPage() {
                 alignItems: 'center',
                 justifyContent: 'space-between'
             }}>
-                <div style={{ flex: 1, maxWidth: '800px', margin: '0 auto', display: 'flex', justifyContent: 'space-between' }}>
+                <div style={{ flex: 1, maxWidth: '900px', margin: '0 auto', display: 'flex', justifyContent: 'space-between' }}>
                     <div>
                         <p style={{ fontSize: '14px', color: isDarkMode ? '#9CA3AF' : '#6B7280' }}>Học sinh: {studentName}</p>
                         <p style={{ fontWeight: '500' }}>Câu {currentQuestion + 1}/{questions.length}</p>
@@ -573,13 +573,13 @@ export function StudentPage() {
 
             {/* Progress Bar Container */}
             <div style={{ background: isDarkMode ? '#1F2937' : 'white', paddingBottom: '12px' }}>
-                <div style={{ maxWidth: '800px', margin: '0 auto', height: '4px', background: isDarkMode ? '#374151' : '#E5E7EB', borderRadius: '2px' }}>
+                <div style={{ maxWidth: '900px', margin: '0 auto', height: '4px', background: isDarkMode ? '#374151' : '#E5E7EB', borderRadius: '2px' }}>
                     <div style={{ width: `${progress}%`, height: '100%', background: '#4F46E5', borderRadius: '2px', transition: 'width 0.3s' }} />
                 </div>
             </div>
 
             {/* Question */}
-            <div style={{ maxWidth: '800px', margin: '0 auto', padding: '24px' }}>
+            <div style={{ maxWidth: '900px', margin: '0 auto', padding: '24px' }}>
                 {question && (
                     <div style={{
                         background: isDarkMode ? '#1F2937' : 'white',
