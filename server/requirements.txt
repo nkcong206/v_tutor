@@ -6,6 +6,6 @@ pydantic-settings
 python-dotenv
 python-multipart
 # AI & Cache
-opena
+openai
 pdf2image
 pydub
