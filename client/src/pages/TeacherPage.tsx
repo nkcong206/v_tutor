@@ -1,16 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
+import { QuestionRenderer } from '../components/QuestionRenderer';
+import { Question } from '../types';
 
 const API_BASE_URL = 'http://localhost:8000';
-
-interface Question {
-    id: number;
-    text: string;
-    options: string[];
-    correct_answer: string;
-    explanation: string;
-}
 
 interface ExamInfo {
     exam_id: string;
@@ -75,7 +69,7 @@ export function TeacherPage() {
 
     // Exam creation state
     const [prompt, setPrompt] = useState('');
-    const [questionCount, setQuestionCount] = useState(5);
+    const [questionCount, setQuestionCount] = useState<number | string>(5);
     const [isGenerating, setIsGenerating] = useState(false);
     const [error, setError] = useState('');
     const [examResult, setExamResult] = useState<ExamResult | null>(null);
@@ -162,7 +156,7 @@ export function TeacherPage() {
                     teacher_id: teacherId,
                     teacher_name: teacherName.trim(),
                     prompt: prompt.trim(),
-                    question_count: questionCount,
+                    question_count: Number(questionCount) || 5,
                     session_id: sessionId,
                     temperature: temperature
                 }),
@@ -227,7 +221,7 @@ export function TeacherPage() {
 
             if (response.ok) {
                 const data = await response.json();
-                setUploadedFiles(prev => [...prev, ...data.files]);
+                setUploadedFiles((prev: string[]) => [...prev, ...data.files]);
             }
         } catch (err) {
             console.error('Upload error:', err);
@@ -284,7 +278,7 @@ export function TeacherPage() {
                 body: formData
             });
 
-            setUploadedFiles(prev => prev.filter(f => f !== filename));
+            setUploadedFiles((prev: string[]) => prev.filter((f: string) => f !== filename));
         } catch (err) {
             console.error('Delete error:', err);
         }
@@ -328,24 +322,44 @@ export function TeacherPage() {
     useEffect(() => {
         if (!selectedExam) return;
 
-        console.log(`🔌 Connecting to SSE for exam ${selectedExam}...`);
         const eventSource = new EventSource(`${API_BASE_URL}/api/exam/events/${selectedExam}`);
 
         eventSource.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
-                console.log("📨 SSE Message:", data);
 
                 if (data.type === 'new_question') {
                     const newQuestion = data.data;
-                    setExamFull(prev => {
+                    setExamFull((prev: ExamFull | null) => {
                         if (!prev) return prev;
-                        // Avoid duplicates if SSE sends same quesiton multiple times (rare)
-                        if (prev.questions.some(q => q.id === newQuestion.id)) return prev;
+                        // Avoid duplicates if SSE sends same question multiple times
+                        if (prev.questions.some((q: Question) => q.id === newQuestion.id)) return prev;
 
                         return {
                             ...prev,
                             questions: [...prev.questions, newQuestion]
+                        };
+                    });
+                } else if (data.type === 'new_submission') {
+                    const newResult = data.data;
+                    setExamStats((prev: ExamStats | null) => {
+                        if (!prev) return prev;
+                        // Avoid duplicates locally
+                        if (prev.students.some(s => s.student_name === newResult.student_name)) return prev;
+
+                        const newStudents = [...prev.students, newResult];
+                        const scores = newStudents.map(s => s.percentage);
+                        const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+
+                        return {
+                            ...prev,
+                            total_students: newStudents.length,
+                            statistics: {
+                                average_score: Number(avg.toFixed(1)),
+                                highest_score: Math.max(...scores),
+                                lowest_score: Math.min(...scores)
+                            },
+                            students: newStudents
                         };
                     });
                 } else if (data.type === 'error') {
@@ -364,7 +378,6 @@ export function TeacherPage() {
         };
 
         return () => {
-            console.log(`🔌 Disconnecting SSE for exam ${selectedExam}`);
             eventSource.close();
         };
     }, [selectedExam]);
@@ -374,19 +387,16 @@ export function TeacherPage() {
     const deleteQuestion = async (questionId: number) => {
         if (!selectedExam) return;
 
-        // Instant delete - no confirmation needed per user request
-        console.log("Deleting question:", questionId);
-        setExamFull(prev => {
+        // Instant delete - no confirmation needed
+        setExamFull((prev: ExamFull | null) => {
             if (!prev) return prev;
             return {
                 ...prev,
-                questions: prev.questions.filter(q => q.id !== questionId)
+                questions: prev.questions.filter((q: Question) => q.id !== questionId)
             };
         });
 
         try {
-            console.log("Sending DELETE request...");
-            // No loading state needed for button as it disappears immediately
             const response = await fetch(`${API_BASE_URL}/api/exam/exam/${selectedExam}/question/${questionId}`, {
                 method: 'DELETE'
             });
@@ -394,7 +404,6 @@ export function TeacherPage() {
             if (!response.ok) {
                 throw new Error("Failed to delete");
             }
-            console.log("DELETE success. Waiting for SSE push for replacement...");
 
         } catch (err) {
             console.error('Error deleting question:', err);
@@ -671,7 +680,7 @@ export function TeacherPage() {
                                 paddingBottom: '8px',
                                 scrollbarWidth: 'thin'
                             }}>
-                                {uploadedFiles.map((file, idx) => {
+                                {uploadedFiles.map((file: string, idx: number) => {
                                     const fileInfo = getFileIcon(file);
                                     return (
                                         <div
@@ -792,7 +801,14 @@ export function TeacherPage() {
                             min={1}
                             max={20}
                             value={questionCount}
-                            onChange={(e) => setQuestionCount(parseInt(e.target.value) || 5)}
+                            onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === '') {
+                                    setQuestionCount('');
+                                } else {
+                                    setQuestionCount(parseInt(val));
+                                }
+                            }}
                             style={{
                                 width: '80px',
                                 padding: '8px 12px',
@@ -829,33 +845,7 @@ export function TeacherPage() {
                         {isGenerating ? '⏳ Đang tạo...' : '✨ Tạo bài kiểm tra'}
                     </button>
 
-                    {examResult && (
-                        <div style={{ marginTop: '16px', padding: '12px', background: isDarkMode ? '#064E3B' : '#ECFDF5', borderRadius: '8px' }}>
-                            <p style={{ fontWeight: 'bold', color: isDarkMode ? '#6EE7B7' : '#059669', marginBottom: '8px', fontSize: '14px' }}>✅ Đã tạo xong!</p>
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                                <input
-                                    value={`${window.location.origin}${examResult.student_url}`}
-                                    readOnly
-                                    style={{
-                                        flex: 1,
-                                        padding: '8px',
-                                        borderRadius: '6px',
-                                        border: isDarkMode ? '1px solid #4B5563' : '1px solid #D1D5DB',
-                                        fontSize: '11px',
-                                        background: isDarkMode ? '#374151' : 'white',
-                                        color: isDarkMode ? 'white' : '#1F2937',
-                                        minWidth: 0
-                                    }}
-                                />
-                                <button
-                                    onClick={copyNewExamLink}
-                                    style={{ padding: '8px 12px', background: copiedNew ? '#059669' : '#4F46E5', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', flexShrink: 0 }}
-                                >
-                                    {copiedNew ? '✓' : '📋'}
-                                </button>
-                            </div>
-                        </div>
-                    )}
+
                 </div>
 
                 {/* Column 2: My Exams */}
@@ -875,7 +865,7 @@ export function TeacherPage() {
                                 Chưa có bài kiểm tra nào
                             </p>
                         ) : (
-                            teacherExams.map((exam) => <div
+                            teacherExams.map((exam: ExamInfo) => <div
                                 key={exam.exam_id}
                                 style={{
                                     padding: '14px',
@@ -965,16 +955,15 @@ export function TeacherPage() {
                                 📝 Câu hỏi ({examFull.questions.length})
                             </h2>
                             <div style={{ maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
-                                {examFull.questions.map((q, idx) => (
+                                {examFull.questions.map((q: Question, idx: number) => (
                                     <div key={`${q.id}-${idx}`} style={{ padding: '14px', background: isDarkMode ? '#374151' : '#F9FAFB', borderRadius: '10px', marginBottom: '12px' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                                             <p style={{ fontWeight: '600', fontSize: '14px', color: isDarkMode ? 'white' : '#1F2937' }}>
-                                                Câu {idx + 1}: {q.text}
+                                                Câu {idx + 1}:
                                             </p>
                                             <button
-                                                onClick={(e) => {
-                                                    console.log("Button clicked directly!");
-                                                    e.stopPropagation(); // Ensure bubbling isn't the issue
+                                                onClick={(e: React.MouseEvent) => {
+                                                    e.stopPropagation();
                                                     deleteQuestion(q.id);
                                                 }}
                                                 disabled={deletingQuestionId === q.id}
@@ -992,25 +981,20 @@ export function TeacherPage() {
                                                 {deletingQuestionId === q.id ? '⏳' : '🗑'}
                                             </button>
                                         </div>
-                                        <div style={{ fontSize: '13px' }}>
-                                            {q.options.map((opt: string, i: number) => (
-                                                <p key={i} style={{
-                                                    padding: '8px 12px',
-                                                    marginBottom: '4px',
-                                                    background: opt.startsWith(q.correct_answer)
-                                                        ? (isDarkMode ? '#374151' : '#ECFDF5')
-                                                        : (isDarkMode ? '#1F2937' : 'white'),
-                                                    borderRadius: '6px',
-                                                    border: opt.startsWith(q.correct_answer)
-                                                        ? (isDarkMode ? '2px solid #6EE7B7' : '1px solid #86EFAC')
-                                                        : (isDarkMode ? '1px solid #4B5563' : '1px solid #E5E7EB'),
-                                                    color: isDarkMode ? 'white' : 'inherit'
-                                                }}>
-                                                    {opt} {opt.startsWith(q.correct_answer) && '✓'}
-                                                </p>
-                                            ))}
+
+                                        {/* Render Question Content & Correct Answer */}
+                                        <div style={{ marginBottom: '12px' }}>
+                                            <QuestionRenderer
+                                                question={q}
+                                                // User requested not to show answers in the blanks for Teacher View
+                                                currentAnswer={undefined}
+                                                onAnswerChange={() => { }} // Read only
+                                                isDarkMode={isDarkMode}
+                                                viewMode="teacher"
+                                            />
                                         </div>
-                                        <p style={{ fontSize: '12px', color: '#6B7280', marginTop: '8px', fontStyle: 'italic' }}>
+
+                                        <p style={{ fontSize: '12px', color: '#6B7280', marginTop: '8px', fontStyle: 'italic', borderTop: '1px solid #E5E7EB', paddingTop: '8px' }}>
                                             💡 {q.explanation}
                                         </p>
                                     </div>
@@ -1042,7 +1026,7 @@ export function TeacherPage() {
 
                                     <p style={{ fontSize: '14px', fontWeight: '500', marginBottom: '12px' }}>Chi tiết từng học sinh:</p>
                                     <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
-                                        {examStats.students.map((student, idx) => (
+                                        {examStats.students.map((student: StudentResult, idx: number) => (
                                             <div key={idx} style={{
                                                 padding: '12px',
                                                 background: '#F9FAFB',

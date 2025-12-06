@@ -9,6 +9,8 @@ __pycache__/
 .env
 server/.env
 server/venv/
+uploads/
+knowledge_base/
 
 # Database
 *.db

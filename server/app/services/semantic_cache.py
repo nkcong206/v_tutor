@@ -48,16 +48,27 @@ class SimpleCache:
         # Granular Question Store
         # context_hash: Hash of (Prompt + Files + Temp)
         # question_hash: Hash of the question content itself to prevent duplicates
+        # question_type: Type of question for regeneration with same type
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS question_cache (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 context_hash TEXT,
                 question_hash TEXT,
+                question_type TEXT DEFAULT 'single_choice',
                 question_json TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(context_hash, question_hash)
             )
         """)
+        
+        # Migration: Add question_type column if it doesn't exist (for existing databases)
+        try:
+            cursor.execute("SELECT question_type FROM question_cache LIMIT 1")
+        except Exception:
+            print("🔄 Migrating database: Adding question_type column...")
+            cursor.execute("ALTER TABLE question_cache ADD COLUMN question_type TEXT DEFAULT 'single_choice'")
+            print("✅ Migration complete!")
+        
         self.conn.commit()
 
     def get(self, key: str):
@@ -103,14 +114,18 @@ class SimpleCache:
             self.init()
             
         cursor = self.conn.cursor()
-        cursor.execute("SELECT question_json FROM question_cache WHERE context_hash = ?", (context_hash,))
+        cursor.execute("SELECT question_json, question_type FROM question_cache WHERE context_hash = ?", (context_hash,))
         rows = cursor.fetchall()
         
-        questions = [json.loads(row[0]) for row in rows]
+        questions = []
+        for row in rows:
+            q = json.loads(row[0])
+            q['_cached_type'] = row[1]  # Add cached type for reference
+            questions.append(q)
         print(f"✅ Retrieved {len(questions)} questions from cache for context {context_hash[:8]}...")
         return questions
 
-    def add_question(self, context_hash: str, question_dict: dict):
+    def add_question(self, context_hash: str, question_dict: dict, question_type: str = 'single_choice'):
         """Add a single question to cache if not exists"""
         if not self.conn:
             self.init()
@@ -124,17 +139,17 @@ class SimpleCache:
         try:
             cursor = self.conn.cursor()
             cursor.execute("""
-                INSERT OR IGNORE INTO question_cache (context_hash, question_hash, question_json) 
-                VALUES (?, ?, ?)
-            """, (context_hash, question_hash, question_json))
+                INSERT OR IGNORE INTO question_cache (context_hash, question_hash, question_type, question_json) 
+                VALUES (?, ?, ?, ?)
+            """, (context_hash, question_hash, question_type, question_json))
             self.conn.commit()
             if cursor.rowcount > 0:
-                print(f"💾 Cached new question for context {context_hash[:8]}...")
+                print(f"💾 Cached new question (type: {question_type}) for context {context_hash[:8]}...")
         except Exception as e:
             print(f"⚠️ Error caching question: {e}")
 
     def remove_question(self, context_hash: str, question_dict: dict):
-        """Remove a specific question from cache"""
+        """Remove a specific question from cache and return its type for regeneration"""
         if not self.conn:
             self.init()
             
@@ -143,19 +158,32 @@ class SimpleCache:
         question_json = json.dumps(question_dict, ensure_ascii=False, sort_keys=True)
         question_hash = hashlib.md5(question_json.encode()).hexdigest()
         
+        removed_type = None
         try:
             cursor = self.conn.cursor()
+            # First, get the question_type before deleting
+            cursor.execute("""
+                SELECT question_type FROM question_cache 
+                WHERE context_hash = ? AND question_hash = ?
+            """, (context_hash, question_hash))
+            row = cursor.fetchone()
+            if row:
+                removed_type = row[0]
+            
+            # Now delete
             cursor.execute("""
                 DELETE FROM question_cache 
                 WHERE context_hash = ? AND question_hash = ?
             """, (context_hash, question_hash))
             self.conn.commit()
             if cursor.rowcount > 0:
-                print(f"🗑️ Removed question from cache (Context: {context_hash[:8]}...)")
+                print(f"🗑️ Removed question (type: {removed_type}) from cache (Context: {context_hash[:8]}...)")
             else:
                 print(f"⚠️ Question not found in cache to remove.")
         except Exception as e:
             print(f"⚠️ Error removing question from cache: {e}")
+        
+        return removed_type
 
     def flush(self):
         # No-op for SQLite as we commit immediately, but kept for interface compatibility
@@ -185,12 +213,13 @@ def get_cached_questions(context_key: str):
     context_hash = hashlib.sha256(context_key.encode("utf-8")).hexdigest()
     return cache_service.get_questions(context_hash)
 
-def add_cached_question(context_key: str, question_dict: dict):
+def add_cached_question(context_key: str, question_dict: dict, question_type: str = 'single_choice'):
     import hashlib
     context_hash = hashlib.sha256(context_key.encode("utf-8")).hexdigest()
-    return cache_service.add_question(context_hash, question_dict)
+    return cache_service.add_question(context_hash, question_dict, question_type)
 
 def remove_cached_question(context_key: str, question_dict: dict):
+    """Remove question and return its type for regeneration"""
     import hashlib
     context_hash = hashlib.sha256(context_key.encode("utf-8")).hexdigest()
     return cache_service.remove_question(context_hash, question_dict)

@@ -1,15 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
+import { QuestionRenderer } from '../components/QuestionRenderer';
+import { Question } from '../types';
 
 const API_BASE_URL = 'http://localhost:8000';
 
-interface Question {
-    id: number;
-    text: string;
-    options: string[];
-    correct_answer?: string;
-}
+
 
 interface ExamResult {
     student_name: string;
@@ -23,6 +20,10 @@ interface ExamResult {
         explanation: string;
         question_text: string;
     }>;
+    analysis?: {
+        summary: string;
+        score: number;
+    };
 }
 
 interface ChatMessage {
@@ -30,12 +31,43 @@ interface ChatMessage {
     content: string;
 }
 
+// Helper to normalize correct_answer to string (handles both letter and index formats)
+const normalizeCorrectAnswer = (answer: string | number | undefined, options: string[]): string => {
+    if (answer === undefined) return '';
+    if (typeof answer === 'number') {
+        // Index-based: return the letter (A, B, C, D)
+        return String.fromCharCode(65 + answer); // 0 -> A, 1 -> B, etc.
+    }
+    // Already a string (letter or "A. Content")
+    return answer.charAt(0).toUpperCase();
+};
+
+// Helper to check if answer is correct
+const isAnswerCorrect = (
+    studentAnswer: string,
+    correctAnswer: string | number | undefined,
+    options: string[]
+): boolean => {
+    const normalizedCorrect = normalizeCorrectAnswer(correctAnswer, options);
+    return studentAnswer.toUpperCase() === normalizedCorrect;
+};
+
+// Helper to check if question is a media type
+const isMediaQuestion = (type?: string): boolean => {
+    return type?.includes('image') || type?.includes('audio') || false;
+};
+
+// Helper to check if question is multi-choice
+const isMultiChoiceQuestion = (type?: string): boolean => {
+    return type?.includes('multi') || false;
+};
+
 export function StudentPage() {
     const { examId } = useParams<{ examId: string }>();
     const [studentName, setStudentName] = useState('');
     const [isStarted, setIsStarted] = useState(false);
     const [questions, setQuestions] = useState<Question[]>([]);
-    const [answers, setAnswers] = useState<Record<string, string>>({});
+    const [answers, setAnswers] = useState<Record<string, any>>({});
     const [currentQuestion, setCurrentQuestion] = useState(0);
     const [isLoading, setIsLoading] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -99,9 +131,11 @@ export function StudentPage() {
         setIsStarted(true);
     };
 
-    const selectAnswer = (questionId: number, answer: string) => {
+    const selectAnswer = (questionId: number, answer: any) => {
         const prevAnswer = answers[questionId.toString()];
-        const isNewAnswer = prevAnswer !== answer;
+
+        // Deep compare for arrays
+        const isNewAnswer = JSON.stringify(prevAnswer) !== JSON.stringify(answer);
 
         setAnswers({ ...answers, [questionId.toString()]: answer });
 
@@ -113,20 +147,30 @@ export function StudentPage() {
             // Check if answer is correct
             const question = questions.find(q => q.id === questionId);
             if (question) {
-                // Check if answer is correct (handle "A" vs "A. Answer content")
-                const isCorrect = question.correct_answer === answer || question.correct_answer?.startsWith(answer + '.');
+                // Determine correctness based on type
+                let isCorrect = false;
+                if (question.type?.includes('multi')) {
+                    // Compare arrays of indices
+                    const correctArr = question.correct_answers || [];
+                    const selectedArr = answer || [];
+                    isCorrect = JSON.stringify(correctArr.sort()) === JSON.stringify(selectedArr.sort());
+                } else if (question.type?.includes('fill_in')) {
+                    // Check if ALL blanks are correct
+                    const correctArr = question.correct_answers || [];
+                    const selectedArr = answer || [];
+                    isCorrect = correctArr.every((ans: any, idx: number) =>
+                        String(selectedArr[idx] || '').trim().toLowerCase() === String(ans).toLowerCase()
+                    );
+                } else {
+                    // Standard Single Choice
+                    isCorrect = isAnswerCorrect(answer, question.correct_answer, question.options);
+                }
 
-                // DEBUG LOG
-                console.log('=== DEBUG SELECT ANSWER ===');
-                console.log('Question:', question.text);
-                console.log('Selected answer:', answer);
-                console.log('Correct answer from API:', question.correct_answer);
-                console.log('Is correct:', isCorrect);
-                console.log('Options:', question.options);
-                console.log('===========================');
-
-                // Send context to AI silently (don't show "Em chọn X" in chat)
-                sendContextToAI(questionId, answer, isCorrect, newAttempts);
+                // Send context to AI silently
+                // For Fill-in-Blanks, handled by onAnswerCommit to avoid keystroke spam
+                if (!question.type?.includes('fill_in')) {
+                    sendContextToAI(questionId, Array.isArray(answer) ? JSON.stringify(answer) : String(answer), isCorrect, newAttempts);
+                }
             }
         }
     };
@@ -134,45 +178,40 @@ export function StudentPage() {
     // Silent context update - only shows AI response, not the trigger
     const sendContextToAI = async (
         questionId: number,
-        selectedAnswer: string,
+        selectedAnswer: any,
         isCorrect: boolean,
         attemptCount: number
     ) => {
         const question = questions.find(q => q.id === questionId);
         if (!question) return;
 
-        // Find the full option text (e.g., "A. 3" from answer "A")
-        const selectedOption = question.options.find((opt: string) => opt.startsWith(selectedAnswer + '.')) || selectedAnswer;
-        const correctOption = question.options.find((opt: string) => opt.startsWith(question.correct_answer + '.')) || question.correct_answer;
-
-        // Abort previous request if exists
-        if (abortControllerRef.current) {
-            abortControllerRef.current.abort();
-        }
-
-        // Create new controller
-        const controller = new AbortController();
+        const controller = new AbortController(); // Declare controller outside try block
         abortControllerRef.current = controller;
 
-        setIsChatLoading(true);
-
         try {
+            // Abort previous request
+            if (abortControllerRef.current) {
+                abortControllerRef.current.abort();
+            }
+
+            setIsChatLoading(true);
+
             const response = await fetch(`${API_BASE_URL}/api/tutor/chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                signal: controller.signal,
                 body: JSON.stringify({
                     exam_id: examId,
                     question_id: questionId,
                     student_name: studentName,
-                    message: `[Học sinh chọn: ${selectedOption}]`,
+                    message: `[Học sinh chọn: ${JSON.stringify(selectedAnswer)}]`,
                     question_text: question.text,
-                    options: question.options,
-                    selected_answer: selectedOption,
-                    correct_answer: correctOption,
+                    options: question.options || [],
+                    selected_answer: selectedAnswer,
+                    correct_answer: question.correct_answer,
                     is_correct: isCorrect,
                     attempt_count: attemptCount
-                })
+                }),
+                signal: controller.signal
             });
 
             if (response.ok) {
@@ -189,6 +228,7 @@ export function StudentPage() {
             if (err.name === 'AbortError') return;
             console.error('Chat error:', err);
         } finally {
+            // Only clear loading if this is still the active controller
             if (abortControllerRef.current === controller) {
                 setIsChatLoading(false);
                 abortControllerRef.current = null;
@@ -220,7 +260,7 @@ export function StudentPage() {
                     question_text: question.text,
                     options: question.options,
                     selected_answer: answers[question.id.toString()],
-                    is_correct: question.correct_answer === answers[question.id.toString()] || question.correct_answer?.startsWith(answers[question.id.toString()] + '.'),
+                    is_correct: isAnswerCorrect(answers[question.id.toString()], question.correct_answer, question.options),
                     attempt_count: attemptCounts[question.id] || 0
                 })
             });
@@ -236,7 +276,6 @@ export function StudentPage() {
             setIsChatLoading(false);
         }
     };
-
     const handleSubmit = async () => {
         // Calculate result on CLIENT SIDE for instant UI
         let correct = 0;
@@ -250,14 +289,46 @@ export function StudentPage() {
 
         for (const q of questions) {
             const qId = String(q.id);
-            const studentAnswer = answers[qId] || '';
-            const isCorrect = studentAnswer.toUpperCase() === q.correct_answer.toUpperCase();
+            const studentAnswer = answers[qId];
+            let isCorrect = false;
+
+            if (q.type?.includes('multi')) {
+                const correctArr = (q.correct_answers || []).map(Number).sort((a, b) => a - b);
+                const selectedArr = (studentAnswer || []).map(Number).sort((a: number, b: number) => a - b);
+                isCorrect = JSON.stringify(correctArr) === JSON.stringify(selectedArr);
+            } else if (q.type?.includes('fill_in')) {
+                const correctArr = q.correct_answers || [];
+                const selectedArr = studentAnswer || [];
+                if (Array.isArray(correctArr) && correctArr.length > 0) {
+                    isCorrect = correctArr.every((ans: any, idx: number) =>
+                        String(selectedArr[idx] || '').trim().toLowerCase() === String(ans).toLowerCase()
+                    );
+                }
+            } else {
+                isCorrect = isAnswerCorrect(studentAnswer || '', q.correct_answer, q.options);
+            }
 
             if (isCorrect) correct++;
 
+            // Format for display
+            let correctAnswerStr = '';
+            let displayStudentAnswer = '';
+
+            if (q.type?.includes('multi')) {
+                // Convert indices to Letters (0->A)
+                correctAnswerStr = (q.correct_answers || []).map((i: any) => String.fromCharCode(65 + Number(i))).join(', ');
+                displayStudentAnswer = (studentAnswer || []).map((i: any) => String.fromCharCode(65 + Number(i))).join(', ');
+            } else if (q.type?.includes('fill_in')) {
+                correctAnswerStr = (q.correct_answers || []).join(' | ');
+                displayStudentAnswer = (studentAnswer || []).join(' | ');
+            } else {
+                correctAnswerStr = normalizeCorrectAnswer(q.correct_answer, q.options);
+                displayStudentAnswer = studentAnswer || '';
+            }
+
             answerDetails[qId] = {
-                student_answer: studentAnswer,
-                correct_answer: q.correct_answer,
+                student_answer: displayStudentAnswer,
+                correct_answer: correctAnswerStr,
                 is_correct: isCorrect,
                 explanation: q.explanation || '',
                 question_text: q.text
@@ -281,13 +352,22 @@ export function StudentPage() {
         setResult(clientResult);
 
         // Sync to server in BACKGROUND (don't wait)
+        // SEND CHAT HISTORY FOR AI ANALYSIS
         fetch(`${API_BASE_URL}/api/exam/exam/${examId}/submit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ student_name: studentName, answers }),
+            body: JSON.stringify({
+                student_name: studentName,
+                answers: answers, // Send raw answers to server
+                chat_history: chatMessages // Send chat logs
+            }),
+        }).then(res => res.json()).then(data => {
+            // Update result with AI Analysis if available
+            if (data.analysis) {
+                setResult(prev => prev ? { ...prev, analysis: data.analysis } : prev);
+            }
         }).catch(err => {
             console.error('Background sync error:', err);
-            // Don't show error to user since they already see their result
         });
     };
 
@@ -501,6 +581,51 @@ export function StudentPage() {
                             </p>
                         </div>
 
+                        {/* AI Analysis */}
+                        {result.analysis && (
+                            <div style={{
+                                marginTop: '24px',
+                                padding: '24px',
+                                background: isDarkMode ? 'rgba(59, 130, 246, 0.2)' : '#EFF6FF',
+                                borderRadius: '16px',
+                                border: `1px solid ${isDarkMode ? '#3B82F6' : '#BFDBFE'}`,
+                                marginBottom: '24px'
+                            }}>
+                                <h3 style={{
+                                    display: 'flex', alignItems: 'center', gap: '8px',
+                                    fontSize: '18px', fontWeight: 'bold',
+                                    color: isDarkMode ? '#93C5FD' : '#1E40AF',
+                                    marginBottom: '12px'
+                                }}>
+                                    <span>🤖</span> Đánh giá từ AI Tutor
+                                </h3>
+                                <div style={{ display: 'flex', gap: '16px', flexDirection: 'column' }}>
+                                    <div>
+                                        <span style={{ fontWeight: 'bold', color: isDarkMode ? '#BFDBFE' : '#1E3A8A' }}>
+                                            Điểm thái độ: {result.analysis.score}/10
+                                        </span>
+                                        <div style={{
+                                            height: '8px', width: '100%', background: isDarkMode ? '#1F2937' : 'white',
+                                            borderRadius: '4px', marginTop: '4px', overflow: 'hidden'
+                                        }}>
+                                            <div style={{
+                                                height: '100%', width: `${result.analysis.score * 10}%`,
+                                                background: result.analysis.score >= 8 ? '#10B981' : result.analysis.score >= 5 ? '#F59E0B' : '#EF4444',
+                                                borderRadius: '4px', transition: 'width 0.5s ease'
+                                            }} />
+                                        </div>
+                                    </div>
+                                    <p style={{
+                                        lineHeight: '1.6',
+                                        color: isDarkMode ? '#D1D5DB' : '#374151',
+                                        fontStyle: 'italic'
+                                    }}>
+                                        "{result.analysis.summary}"
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Detailed Answers */}
                         <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '16px' }}>Chi tiết từng câu:</h2>
                         {Object.entries(result.answers).map(([qId, answer]) => (
@@ -588,38 +713,113 @@ export function StudentPage() {
                         boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
                         color: isDarkMode ? 'white' : 'inherit'
                     }}>
-                        <h2 style={{ fontSize: '18px', marginBottom: '24px' }}>
-                            <span style={{ color: '#4F46E5' }}>Câu {currentQuestion + 1}:</span> {question.text}
-                        </h2>
 
-                        {/* Options */}
+
+                        {/* Image Display for image questions */}
+
+
+                        {/* Audio Player for audio questions */}
+
+
+                        {/* Question Type Badge */}
+                        {/* Question Type Badge */}
+                        {(() => {
+                            let badgeInfo = { label: '', icon: '', bg: '', color: '' };
+                            const t = question.type || 'single_choice';
+
+                            switch (t) {
+                                // Text Questions
+                                case 'single_choice':
+                                    badgeInfo = { label: 'Chọn 1 câu trả lời', icon: '📝', bg: '#F3F4F6', color: '#374151' };
+                                    break;
+                                case 'multi_choice':
+                                    badgeInfo = { label: 'Chọn nhiều câu trả lời', icon: '📝', bg: '#E0E7FF', color: '#3730A3' };
+                                    break;
+                                case 'fill_in_blanks':
+                                    badgeInfo = { label: 'Điền từ vào chỗ trống', icon: '✏️', bg: '#FCE7F3', color: '#9D174D' };
+                                    break;
+
+                                // Image Questions
+                                case 'image_single_choice':
+                                    badgeInfo = { label: 'Nhìn ảnh và chọn 1 câu trả lời', icon: '🖼️', bg: '#DBEAFE', color: '#1E40AF' };
+                                    break;
+                                case 'image_multi_choice':
+                                    badgeInfo = { label: 'Nhìn ảnh và chọn nhiều câu trả lời', icon: '🖼️', bg: '#DBEAFE', color: '#1E40AF' };
+                                    break;
+                                case 'image_fill_in_blanks':
+                                    badgeInfo = { label: 'Nhìn ảnh và điền từ vào chỗ trống', icon: '🖼️', bg: '#DBEAFE', color: '#1E40AF' };
+                                    break;
+
+                                // Audio Questions
+                                case 'audio_single_choice':
+                                    badgeInfo = { label: 'Lắng nghe và chọn 1 câu trả lời', icon: '🔊', bg: '#FEF3C7', color: '#92400E' };
+                                    break;
+                                case 'audio_multi_choice':
+                                    badgeInfo = { label: 'Lắng nghe và chọn nhiều câu trả lời', icon: '🔊', bg: '#FEF3C7', color: '#92400E' };
+                                    break;
+                                case 'audio_fill_in_blanks':
+                                    badgeInfo = { label: 'Lắng nghe và điền từ phù hợp vào chỗ trống', icon: '🔊', bg: '#FEF3C7', color: '#92400E' };
+                                    break;
+
+                                default:
+                                    badgeInfo = { label: t, icon: '❓', bg: '#E5E7EB', color: '#374151' };
+                            }
+
+                            return (
+                                <div style={{
+                                    marginBottom: '16px',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    padding: '6px 14px',
+                                    borderRadius: '20px',
+                                    fontSize: '13px',
+                                    fontWeight: '600',
+                                    background: badgeInfo.bg,
+                                    color: badgeInfo.color,
+                                    transform: 'translateX(-2px)', // Visual alignment
+                                }}>
+                                    <span>{badgeInfo.icon}</span>
+                                    <span>{badgeInfo.label}</span>
+                                </div>
+                            );
+                        })()}
+                        {/* Options / Answer Area */}
                         <div style={{ marginBottom: '32px' }}>
-                            {question.options.map((option: string, idx: number) => {
-                                const optionLetter = option.charAt(0);
-                                const isSelected = answers[question.id.toString()] === optionLetter;
+                            <QuestionRenderer
+                                question={question}
+                                currentAnswer={answers[question.id.toString()] || (question.type?.includes('multi') ? [] : '')}
+                                onAnswerChange={(ans) => selectAnswer(question.id, ans)}
+                                isDarkMode={isDarkMode}
+                                onCheckBlank={(index, value) => {
+                                    if (question.correct_answers && question.correct_answers[index]) {
+                                        const correct = question.correct_answers[index];
+                                        return String(value).trim().toLowerCase() === String(correct).toLowerCase();
+                                    }
+                                    return false;
+                                }}
+                                onAnswerCommit={() => {
+                                    // Manually trigger AI for Fill-in-Blanks commit
+                                    const ans = answers[question.id.toString()];
+                                    let isCorrect = false;
+                                    const correctArr = question.correct_answers || [];
+                                    const selectedArr = ans || [];
 
-                                return (
-                                    <button
-                                        key={idx}
-                                        onClick={() => selectAnswer(question.id, optionLetter)}
-                                        style={{
-                                            width: '100%',
-                                            padding: '16px',
-                                            textAlign: 'left',
-                                            borderRadius: '10px',
-                                            border: isSelected ? '2px solid #4F46E5' : (isDarkMode ? '2px solid #374151' : '2px solid #E5E7EB'),
-                                            background: isSelected ? (isDarkMode ? '#312E81' : '#EEF2FF') : (isDarkMode ? '#374151' : 'white'),
-                                            color: isDarkMode ? 'white' : 'inherit',
-                                            marginBottom: '12px',
-                                            cursor: 'pointer',
-                                            fontSize: '15px',
-                                            transition: 'all 0.2s'
-                                        }}
-                                    >
-                                        {option}
-                                    </button>
-                                );
-                            })}
+                                    // Re-calculate correctness for the commit
+                                    if (Array.isArray(correctArr)) {
+                                        isCorrect = correctArr.every((c: any, idx: number) =>
+                                            String(selectedArr[idx] || '').trim().toLowerCase() === String(c).toLowerCase()
+                                        );
+                                    }
+
+                                    sendContextToAI(
+                                        question.id,
+                                        ans,
+                                        isCorrect,
+                                        (attemptCounts[question.id] || 0)
+                                    );
+                                }}
+                            />
                         </div>
 
                         {/* Navigation */}

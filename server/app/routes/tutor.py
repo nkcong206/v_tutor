@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Union
 from app.config import settings
 from datetime import datetime
 import json
@@ -26,10 +26,12 @@ class TutorChatRequest(BaseModel):
     message: str
     question_text: str
     options: List[str]
-    selected_answer: Optional[str] = None
-    correct_answer: Optional[str] = None
+    selected_answer: Optional[Union[str, int, List[str], List[int]]] = None
+    correct_answer: Optional[Union[str, int, List[str], List[int]]] = None
     is_correct: Optional[bool] = None
     attempt_count: int = 0
+    image_description: Optional[str] = None
+    audio_script_text: Optional[str] = None
 
 
 class TutorChatResponse(BaseModel):
@@ -44,10 +46,17 @@ class TutorAIResponse(BaseModel):
     suggestions: List[str]  # Exactly 4 suggestions that quiz the student
 
 
-def get_system_prompt(question_text: str, options: List[str], selected_answer: Optional[str], 
-                      correct_answer: Optional[str], is_correct: Optional[bool], attempt_count: int) -> str:
+def get_system_prompt(question_text: str, options: List[str], selected_answer: Optional[Union[str, int, List[str], List[int]]], 
+                      correct_answer: Optional[Union[str, int, List[str], List[int]]], is_correct: Optional[bool], attempt_count: int,
+                      image_description: Optional[str] = None, audio_script_text: Optional[str] = None) -> str:
     options_text = "\n".join(options)
     
+    context_info = ""
+    if image_description:
+         context_info += f"\n\nMÔ TẢ HÌNH ẢNH (Image Description):\n{image_description}"
+    if audio_script_text:
+         context_info += f"\n\nNỘI DUNG HỘI THOẠI (Transcript):\n{audio_script_text}"
+
     if is_correct is True:
         status_info = f"""
 TRẠNG THÁI HIỆN TẠI: CHÍNH XÁC (CORRECT)
@@ -83,6 +92,7 @@ TRẠNG THÁI HIỆN TẠI: CHƯA LÀM
 
 CÂU HỎI ĐANG LÀM:
 {question_text}
+{context_info}
 
 CÁC ĐÁP ÁN:
 {options_text}
@@ -154,7 +164,9 @@ async def tutor_chat(request: TutorChatRequest):
             request.selected_answer,
             request.correct_answer,
             request.is_correct,
-            request.attempt_count
+            request.attempt_count,
+            request.image_description,
+            request.audio_script_text
         )
         
         # Build messages for API
@@ -197,16 +209,22 @@ async def tutor_chat(request: TutorChatRequest):
         if not final_response_obj:
             # Cache Miss
             try:
-                # Use Beta Parse for Structured Output
-                response = client.beta.chat.completions.parse(
-                    model="gpt-4o-mini",
-                    messages=messages,
-                    temperature=0.7,
-                    max_tokens=4000, # Increased to 4000 to prevent 'length limit reached'
-                    response_format=TutorAIResponse
-                )
+                # Use Structured Service
+                from app.services.llm_service import llm_service
                 
-                final_response_obj = response.choices[0].message.parsed
+                # Reconstruct prompts for the service interface
+                # Note: llm_service expects (sys, user) strings, but here we have messages list for history.
+                
+                sys_msg = messages[0]["content"]
+                usr_msg = messages[1]["content"] if len(messages) > 1 else ""
+                
+                final_response_obj = llm_service.generate_response(
+                    response_model=TutorAIResponse,
+                    system_prompt=sys_msg,
+                    user_prompt=usr_msg,
+                    temperature=0.7,
+                    max_tokens=4000
+                )
                 
                 elapsed = time.time() - start_time
                 print(f"❌ TUTOR CACHE MISS | Time: {elapsed:.3f}s")
