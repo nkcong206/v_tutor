@@ -447,7 +447,7 @@ def run_exam_analysis(exam_id: str, result_index: int, student_name: str, score:
                 students_db[exam_id][result_index]["analysis"] = analysis
                 # Broadcast the update to the teacher
                 import asyncio
-                from app.main import sse_manager # Assuming sse_manager is accessible
+                # sse_manager is available globally
                 asyncio.run(sse_manager.broadcast(exam_id, {
                     "type": "analysis_update",
                     "data": {
@@ -718,9 +718,17 @@ async def submit_exam(exam_id: str, request: SubmitExamRequest, background_tasks
                     is_correct = all(str(a).strip().lower() == str(b).strip().lower() 
                                    for a, b in zip(correct_arr, student_arr))
             else:
-                # Single choice: compare single value (int or string)
+                # Single choice: normalize both values to handle Index vs Letter mismatch (e.g. 0 vs "A")
                 correct_val = q.get("correct_answer")
-                is_correct = str(student_answer) == str(correct_val)
+                
+                def normalize(val):
+                    s = str(val).strip()
+                    if s.isdigit():
+                        return chr(65 + int(s))
+                    # Fallback matches Frontend: take first character (e.g. "A. Option" -> "A")
+                    return s[0].upper() if s else ""
+
+                is_correct = normalize(student_answer) == normalize(correct_val)
         except Exception:
             is_correct = False
 
@@ -827,7 +835,11 @@ async def get_teacher_exams(teacher_id: str):
     for exam_id in exam_ids:
         if exam_id in exams_db:
             exam = exams_db[exam_id]
-            student_count = len(students_db.get(exam_id, []))
+            exam = exams_db[exam_id]
+            s_list = students_db.get(exam_id, [])
+            student_count = len(s_list)
+            q_count = len(exam["questions"])
+            print(f"🔍 [DEBUG] Exam {exam_id}: Questions={q_count}, Students={student_count}")
             exams_list.append({
                 "exam_id": exam_id,
                 "prompt": exam["prompt"],

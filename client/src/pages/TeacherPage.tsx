@@ -36,6 +36,10 @@ interface StudentResult {
     total: number;
     percentage: number;
     submitted_at: string;
+    analysis?: {
+        score: number;
+        summary: string;
+    };
 }
 
 interface ExamStats {
@@ -342,6 +346,18 @@ export function TeacherPage() {
                     });
                 } else if (data.type === 'new_submission') {
                     const newResult = data.data;
+
+                    // Update Exam List state (teacherExams) to reflect new student count immediately
+                    setTeacherExams(prevExams => prevExams.map(exam => {
+                        // Note: We infer exam_id from context or data. 
+                        // Check if data.data has exam_id. If not, we can only update the CURRENTLY selected exam.
+                        // But we know 'newResult' is for 'selectedExam' because SSE is scoped to 'selectedExam'.
+                        if (exam.exam_id === selectedExam) {
+                            return { ...exam, student_count: exam.student_count + 1 };
+                        }
+                        return exam;
+                    }));
+
                     setExamStats((prev: ExamStats | null) => {
                         if (!prev) return prev;
                         // Avoid duplicates locally
@@ -940,7 +956,10 @@ export function TeacherPage() {
                     borderRadius: '16px',
                     padding: '24px',
                     boxShadow: '0 10px 40px rgba(0,0,0,0.2)',
-                    minHeight: 'calc(100vh - 150px)'
+                    height: 'calc(100vh - 120px)',  // Fixed height to fit page
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflow: 'hidden'
                 }}>
                     {isLoading ? (
                         <p style={{ textAlign: 'center', color: '#6B7280', padding: '60px 0' }}>⏳ Đang tải...</p>
@@ -1025,30 +1044,56 @@ export function TeacherPage() {
                                     </div>
 
                                     <p style={{ fontSize: '14px', fontWeight: '500', marginBottom: '12px' }}>Chi tiết từng học sinh:</p>
-                                    <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                                    <div style={{
+                                        marginTop: '16px',
+                                        flex: 1,
+                                        overflowY: 'auto',
+                                        paddingRight: '6px'
+                                    }}>
                                         {examStats.students.map((student: StudentResult, idx: number) => (
                                             <div key={idx} style={{
                                                 padding: '12px',
-                                                background: '#F9FAFB',
+                                                background: isDarkMode ? '#374151' : '#F9FAFB',
                                                 borderRadius: '8px',
                                                 marginBottom: '8px',
-                                                display: 'flex',
-                                                justifyContent: 'space-between',
-                                                alignItems: 'center'
+                                                border: isDarkMode ? '1px solid #4B5563' : 'none'
                                             }}>
-                                                <div>
-                                                    <p style={{ fontWeight: '500', fontSize: '14px' }}>{student.student_name}</p>
-                                                    <p style={{ fontSize: '11px', color: '#6B7280' }}>
-                                                        {new Date(student.submitted_at).toLocaleString('vi-VN')}
-                                                    </p>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <div>
+                                                        <p style={{ fontWeight: '500', fontSize: '14px', color: isDarkMode ? 'white' : '#1F2937' }}>{student.student_name}</p>
+                                                        <p style={{ fontSize: '11px', color: isDarkMode ? '#D1D5DB' : '#6B7280' }}>
+                                                            {new Date(student.submitted_at).toLocaleString('vi-VN')}
+                                                        </p>
+                                                    </div>
+                                                    <div style={{
+                                                        fontSize: '18px',
+                                                        fontWeight: 'bold',
+                                                        color: student.percentage >= 80 ? '#059669' : student.percentage >= 50 ? '#D97706' : '#DC2626'
+                                                    }}>
+                                                        {student.score}/{student.total} ({student.percentage}%)
+                                                    </div>
                                                 </div>
-                                                <div style={{
-                                                    fontSize: '18px',
-                                                    fontWeight: 'bold',
-                                                    color: student.percentage >= 80 ? '#059669' : student.percentage >= 50 ? '#D97706' : '#DC2626'
-                                                }}>
-                                                    {student.score}/{student.total} ({student.percentage}%)
-                                                </div>
+
+                                                {/* AI Analysis Display */}
+                                                {student.analysis && (
+                                                    <div style={{
+                                                        marginTop: '10px',
+                                                        padding: '10px',
+                                                        borderRadius: '6px',
+                                                        background: isDarkMode ? 'rgba(59, 130, 246, 0.2)' : '#EFF6FF',
+                                                        border: `1px solid ${isDarkMode ? '#3B82F6' : '#BFDBFE'}`
+                                                    }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                                                            <span style={{ fontSize: '14px' }}>🤖</span>
+                                                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: isDarkMode ? '#93C5FD' : '#1E40AF' }}>
+                                                                AI đánh giá: {student.analysis.score}/10
+                                                            </span>
+                                                        </div>
+                                                        <p style={{ fontSize: '12px', color: isDarkMode ? '#D1D5DB' : '#374151', fontStyle: 'italic', lineHeight: '1.4' }}>
+                                                            "{student.analysis.summary}"
+                                                        </p>
+                                                    </div>
+                                                )}
                                             </div>
                                         ))}
                                     </div>

@@ -925,7 +925,7 @@ export function StudentPage() {
                         right: '24px',
                         maxWidth: '280px',
                         padding: '12px 16px',
-                        background: 'white',
+                        background: isDarkMode ? '#374151' : 'white',
                         borderRadius: '16px 16px 4px 16px',
                         boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
                         cursor: 'pointer',
@@ -933,7 +933,7 @@ export function StudentPage() {
                         zIndex: 999
                     }}
                 >
-                    <p style={{ fontSize: '13px', color: '#1F2937', margin: 0, lineHeight: 1.4 }}>
+                    <p style={{ fontSize: '13px', color: isDarkMode ? 'white' : '#1F2937', margin: 0, lineHeight: 1.4 }}>
                         🤖 {latestBubble.length > 100 ? latestBubble.slice(0, 100) + '...' : latestBubble}
                     </p>
                 </div>
@@ -973,7 +973,7 @@ export function StudentPage() {
                     right: '24px',
                     width: '360px',
                     height: '500px',
-                    background: 'white',
+                    background: isDarkMode ? '#1F2937' : 'white',
                     borderRadius: '16px',
                     boxShadow: '0 10px 40px rgba(0,0,0,0.2)',
                     display: 'flex',
@@ -1015,8 +1015,8 @@ export function StudentPage() {
                                 <div style={{
                                     padding: '10px 14px',
                                     borderRadius: msg.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
-                                    background: msg.role === 'user' ? '#4F46E5' : '#F3F4F6',
-                                    color: msg.role === 'user' ? 'white' : '#1F2937',
+                                    background: msg.role === 'user' ? '#4F46E5' : (isDarkMode ? '#374151' : '#F3F4F6'),
+                                    color: msg.role === 'user' ? 'white' : (isDarkMode ? 'white' : '#1F2937'),
                                     fontSize: '13px',
                                     lineHeight: '1.4'
                                 }}>
@@ -1029,7 +1029,7 @@ export function StudentPage() {
                                 <div style={{
                                     padding: '10px 14px',
                                     borderRadius: '14px 14px 14px 4px',
-                                    background: '#F3F4F6',
+                                    background: isDarkMode ? '#374151' : '#F3F4F6',
                                     color: '#6B7280',
                                     fontSize: '13px'
                                 }}>
@@ -1043,7 +1043,7 @@ export function StudentPage() {
                     {/* Suggested Prompts */}
                     <div style={{
                         padding: '10px 14px',
-                        borderTop: '1px solid #E5E7EB',
+                        borderTop: isDarkMode ? '1px solid #374151' : '1px solid #E5E7EB',
                         display: 'flex',
                         flexWrap: 'wrap',
                         gap: '8px',
@@ -1056,9 +1056,9 @@ export function StudentPage() {
                                 style={{
                                     width: 'calc(50% - 4px)', // Force 2 items per row (accounting for gap)
                                     padding: '6px 10px',
-                                    background: '#EEF2FF',
-                                    color: '#4F46E5',
-                                    border: '1px solid #C7D2FE',
+                                    background: isDarkMode ? '#312E81' : '#EEF2FF',
+                                    color: isDarkMode ? '#818CF8' : '#4F46E5',
+                                    border: isDarkMode ? '1px solid #4338CA' : '1px solid #C7D2FE',
                                     borderRadius: '12px',
                                     fontSize: '11px',
                                     cursor: isChatLoading ? 'not-allowed' : 'pointer',
@@ -1076,7 +1076,7 @@ export function StudentPage() {
                     {/* Chat Input */}
                     <div style={{
                         padding: '12px',
-                        borderTop: '1px solid #E5E7EB',
+                        borderTop: isDarkMode ? '1px solid #374151' : '1px solid #E5E7EB',
                         display: 'flex',
                         gap: '8px'
                     }}>
@@ -1097,7 +1097,9 @@ export function StudentPage() {
                                 flex: 1,
                                 padding: '10px',
                                 borderRadius: '8px',
-                                border: '1px solid #E5E7EB',
+                                border: isDarkMode ? '1px solid #4B5563' : '1px solid #E5E7EB',
+                                background: isDarkMode ? '#374151' : 'white',
+                                color: isDarkMode ? 'white' : 'inherit',
                                 fontSize: '13px',
                                 outline: 'none'
                             }}
@@ -1107,8 +1109,12 @@ export function StudentPage() {
                             disabled={isChatLoading || !chatInput.trim()}
                             style={{
                                 padding: '10px 14px',
-                                background: (isChatLoading || !chatInput.trim()) ? '#E5E7EB' : '#4F46E5',
-                                color: 'white',
+                                background: (isChatLoading || !chatInput.trim())
+                                    ? (isDarkMode ? '#374151' : '#E5E7EB')
+                                    : '#4F46E5',
+                                color: (isChatLoading || !chatInput.trim())
+                                    ? '#9CA3AF'
+                                    : 'white',
                                 border: 'none',
                                 borderRadius: '8px',
                                 cursor: (isChatLoading || !chatInput.trim()) ? 'not-allowed' : 'pointer',
