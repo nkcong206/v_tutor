@@ -41,6 +41,13 @@ async def startup_event():
     print(f"🚀 {settings.app_name} is starting...")
     print(f"📚 Database: {settings.database_url}")
     print(f"🤖 AI Model: OpenAI")
+    
+    # Clean up data directory on startup
+    import shutil
+    if os.path.exists("data"):
+        shutil.rmtree("data")
+        print("🧹 Cleaned up 'data' directory")
+    os.makedirs("data", exist_ok=True)
 
 
 @app.get("/")

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
+import { useTheme } from '../contexts/ThemeContext';
 
 const API_BASE_URL = 'http://localhost:8000';
 
@@ -237,50 +238,118 @@ export function StudentPage() {
     };
 
     const handleSubmit = async () => {
-        setIsSubmitting(true);
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/exam/exam/${examId}/submit`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ student_name: studentName, answers }),
-            });
-            if (!response.ok) throw new Error('Có lỗi khi nộp bài');
-            const data = await response.json();
-            setResult(data);
-        } catch (err: any) {
-            setError(err.message);
-        } finally {
-            setIsSubmitting(false);
+        // Calculate result on CLIENT SIDE for instant UI
+        let correct = 0;
+        const answerDetails: Record<string, {
+            student_answer: string;
+            correct_answer: string;
+            is_correct: boolean;
+            explanation: string;
+            question_text: string;
+        }> = {};
+
+        for (const q of questions) {
+            const qId = String(q.id);
+            const studentAnswer = answers[qId] || '';
+            const isCorrect = studentAnswer.toUpperCase() === q.correct_answer.toUpperCase();
+
+            if (isCorrect) correct++;
+
+            answerDetails[qId] = {
+                student_answer: studentAnswer,
+                correct_answer: q.correct_answer,
+                is_correct: isCorrect,
+                explanation: q.explanation || '',
+                question_text: q.text
+            };
         }
+
+        const total = questions.length;
+        const percentage = total > 0 ? (correct / total * 100) : 0;
+
+        // Build result object (same structure as server response)
+        const clientResult = {
+            student_name: studentName,
+            score: correct,
+            total: total,
+            percentage: Math.round(percentage * 10) / 10,
+            answers: answerDetails,
+            submitted_at: new Date().toISOString()
+        };
+
+        // Show result IMMEDIATELY (optimistic UI)
+        setResult(clientResult);
+
+        // Sync to server in BACKGROUND (don't wait)
+        fetch(`${API_BASE_URL}/api/exam/exam/${examId}/submit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ student_name: studentName, answers }),
+        }).catch(err => {
+            console.error('Background sync error:', err);
+            // Don't show error to user since they already see their result
+        });
     };
+
+    const { theme, toggleTheme } = useTheme();
+    const isDarkMode = theme === 'dark';
+
+    // Helper for Theme Toggle Button
+    const ThemeToggle = () => (
+        <button
+            onClick={toggleTheme}
+            style={{
+                position: 'fixed',
+                top: '20px',
+                right: '20px',
+                background: isDarkMode ? '#374151' : 'white',
+                border: isDarkMode ? '1px solid #4B5563' : '1px solid #E5E7EB',
+                borderRadius: '50%',
+                width: '40px',
+                height: '40px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+                zIndex: 1000,
+                fontSize: '20px'
+            }}
+            title={isDarkMode ? 'Chuyển sang chế độ sáng' : 'Chuyển sang chế độ tối'}
+        >
+            {isDarkMode ? '☀️' : '🌙'}
+        </button>
+    );
 
     // Name Entry Screen
     if (!isStarted) {
         return (
             <div style={{
                 minHeight: '100vh',
-                background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
+                background: isDarkMode ? 'linear-gradient(135deg, #111827 0%, #1F2937 100%)' : 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 padding: '20px'
             }}>
+                <ThemeToggle />
                 <div style={{
-                    background: 'white',
+                    background: isDarkMode ? '#374151' : 'white',
                     borderRadius: '20px',
                     padding: '40px',
                     maxWidth: '400px',
                     width: '100%',
                     boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-                    textAlign: 'center'
+                    textAlign: 'center',
+                    color: isDarkMode ? 'white' : '#1F2937'
                 }}>
                     <h1 style={{ fontSize: '32px', marginBottom: '8px' }}>🎓</h1>
-                    <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#1F2937', marginBottom: '24px' }}>
+                    <h2 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '24px' }}>
                         Bài kiểm tra
                     </h2>
 
                     <div style={{ marginBottom: '20px' }}>
-                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', color: '#374151' }}>
+                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', color: isDarkMode ? '#D1D5DB' : '#374151' }}>
                             Nhập họ và tên của bạn:
                         </label>
                         <input
@@ -295,7 +364,9 @@ export function StudentPage() {
                                 border: '2px solid #E5E7EB',
                                 fontSize: '16px',
                                 textAlign: 'center',
-                                boxSizing: 'border-box'
+                                boxSizing: 'border-box',
+                                background: isDarkMode ? '#1F2937' : 'white',
+                                color: isDarkMode ? 'white' : 'black'
                             }}
                         />
                     </div>
@@ -318,7 +389,7 @@ export function StudentPage() {
                         style={{
                             width: '100%',
                             padding: '14px',
-                            background: studentName.trim() ? 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)' : '#D1D5DB',
+                            background: studentName.trim() ? (isDarkMode ? '#10B981' : 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)') : '#D1D5DB',
                             color: 'white',
                             border: 'none',
                             borderRadius: '10px',
@@ -339,11 +410,12 @@ export function StudentPage() {
         return (
             <div style={{
                 minHeight: '100vh',
-                background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
+                background: isDarkMode ? 'linear-gradient(135deg, #111827 0%, #1F2937 100%)' : 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center'
             }}>
+                <ThemeToggle />
                 <div style={{ textAlign: 'center', color: 'white' }}>
                     <p style={{ fontSize: '48px', marginBottom: '16px' }}>⏳</p>
                     <p style={{ fontSize: '18px' }}>Đang tải bài kiểm tra...</p>
@@ -363,6 +435,7 @@ export function StudentPage() {
                 justifyContent: 'center',
                 padding: '20px'
             }}>
+                <ThemeToggle />
                 <div style={{
                     background: 'white',
                     borderRadius: '16px',
@@ -380,27 +453,32 @@ export function StudentPage() {
 
     // Result Screen
     if (result) {
-        const bgColor = result.percentage >= 80 ? '#ECFDF5' : result.percentage >= 50 ? '#FEF3C7' : '#FEE2E2';
-        const textColor = result.percentage >= 80 ? '#059669' : result.percentage >= 50 ? '#D97706' : '#DC2626';
+        // Use neutral colors for both light and dark mode
+        const bgColor = isDarkMode ? '#4B5563' : '#F3F4F6';
+        const textColor = isDarkMode
+            ? '#F9FAFB'
+            : (result.percentage >= 80 ? '#059669' : result.percentage >= 50 ? '#D97706' : '#DC2626');
         const emoji = result.percentage >= 80 ? '🎉' : result.percentage >= 50 ? '👍' : '💪';
 
         return (
             <div style={{
                 minHeight: '100vh',
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                background: isDarkMode ? 'linear-gradient(135deg, #111827 0%, #1F2937 100%)' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                 padding: '20px'
             }}>
+                <ThemeToggle />
                 <div style={{ maxWidth: '700px', margin: '0 auto' }}>
                     <div style={{
-                        background: 'white',
+                        background: isDarkMode ? '#374151' : 'white',
                         borderRadius: '20px',
                         padding: '32px',
-                        boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+                        boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+                        color: isDarkMode ? 'white' : '#1F2937'
                     }}>
-                        <h1 style={{ textAlign: 'center', color: '#1F2937', marginBottom: '8px' }}>
+                        <h1 style={{ textAlign: 'center', marginBottom: '8px' }}>
                             Kết quả bài kiểm tra
                         </h1>
-                        <p style={{ textAlign: 'center', color: '#6B7280', marginBottom: '24px' }}>
+                        <p style={{ textAlign: 'center', color: isDarkMode ? '#D1D5DB' : '#6B7280', marginBottom: '24px' }}>
                             Học sinh: {result.student_name}
                         </p>
 
@@ -418,7 +496,7 @@ export function StudentPage() {
                             <p style={{ fontSize: '28px', fontWeight: 'bold', color: textColor }}>
                                 {result.percentage}%
                             </p>
-                            <p style={{ fontSize: '24px', marginTop: '8px' }}>
+                            <p style={{ fontSize: '24px', marginTop: '8px', color: isDarkMode ? 'white' : '#1F2937' }}>
                                 {emoji} {result.percentage >= 80 ? 'Xuất sắc!' : result.percentage >= 50 ? 'Khá tốt!' : 'Cần cố gắng thêm!'}
                             </p>
                         </div>
@@ -431,16 +509,16 @@ export function StudentPage() {
                                 style={{
                                     padding: '16px',
                                     borderRadius: '12px',
-                                    border: `2px solid ${answer.is_correct ? '#86EFAC' : '#FCA5A5'}`,
-                                    background: answer.is_correct ? '#F0FDF4' : '#FEF2F2',
-                                    marginBottom: '12px'
+                                    background: isDarkMode ? '#4B5563' : '#F3F4F6',
+                                    marginBottom: '12px',
+                                    color: isDarkMode ? 'white' : '#1F2937'
                                 }}
                             >
                                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
                                     <span style={{ fontSize: '20px' }}>{answer.is_correct ? '✅' : '❌'}</span>
                                     <div style={{ flex: 1 }}>
                                         <p style={{ fontWeight: '500', marginBottom: '8px' }}>Câu {qId}: {answer.question_text}</p>
-                                        <p style={{ fontSize: '14px', color: '#374151' }}>
+                                        <p style={{ fontSize: '14px', color: isDarkMode ? '#D1D5DB' : '#374151' }}>
                                             Bạn chọn: <strong>{answer.student_answer || '(Chưa trả lời)'}</strong>
                                         </p>
                                         {!answer.is_correct && (
@@ -448,7 +526,7 @@ export function StudentPage() {
                                                 Đáp án đúng: <strong>{answer.correct_answer}</strong>
                                             </p>
                                         )}
-                                        <p style={{ fontSize: '13px', color: '#6B7280', marginTop: '8px', fontStyle: 'italic' }}>
+                                        <p style={{ fontSize: '13px', color: isDarkMode ? '#9CA3AF' : '#6B7280', marginTop: '8px', fontStyle: 'italic' }}>
                                             {answer.explanation}
                                         </p>
                                     </div>
@@ -467,25 +545,35 @@ export function StudentPage() {
     const answeredCount = Object.keys(answers).length;
 
     return (
-        <div style={{ minHeight: '100vh', background: '#F3F4F6', position: 'relative' }}>
+        <div style={{ minHeight: '100vh', background: isDarkMode ? '#111827' : '#F3F4F6', position: 'relative' }}>
+            <ThemeToggle />
             {/* Header */}
             <div style={{
-                background: 'white',
-                borderBottom: '1px solid #E5E7EB',
-                padding: '16px 24px'
+                background: isDarkMode ? '#1F2937' : 'white',
+                borderBottom: isDarkMode ? '1px solid #374151' : '1px solid #E5E7EB',
+                padding: '16px 24px',
+                color: isDarkMode ? 'white' : 'inherit',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
             }}>
-                <div style={{ maxWidth: '800px', margin: '0 auto', display: 'flex', justifyContent: 'space-between' }}>
+                <div style={{ flex: 1, maxWidth: '800px', margin: '0 auto', display: 'flex', justifyContent: 'space-between' }}>
                     <div>
-                        <p style={{ fontSize: '14px', color: '#6B7280' }}>Học sinh: {studentName}</p>
+                        <p style={{ fontSize: '14px', color: isDarkMode ? '#9CA3AF' : '#6B7280' }}>Học sinh: {studentName}</p>
                         <p style={{ fontWeight: '500' }}>Câu {currentQuestion + 1}/{questions.length}</p>
                     </div>
-                    <div style={{ textAlign: 'right' }}>
-                        <p style={{ fontSize: '14px', color: '#6B7280' }}>Đã trả lời</p>
-                        <p style={{ fontWeight: '500' }}>{answeredCount}/{questions.length}</p>
+                    <div style={{ textAlign: 'right', display: 'flex', gap: '16px', alignItems: 'center' }}>
+                        <div>
+                            <p style={{ fontSize: '14px', color: isDarkMode ? '#9CA3AF' : '#6B7280' }}>Đã trả lời</p>
+                            <p style={{ fontWeight: '500' }}>{answeredCount}/{questions.length}</p>
+                        </div>
                     </div>
                 </div>
-                {/* Progress Bar */}
-                <div style={{ maxWidth: '800px', margin: '12px auto 0', height: '4px', background: '#E5E7EB', borderRadius: '2px' }}>
+            </div>
+
+            {/* Progress Bar Container */}
+            <div style={{ background: isDarkMode ? '#1F2937' : 'white', paddingBottom: '12px' }}>
+                <div style={{ maxWidth: '800px', margin: '0 auto', height: '4px', background: isDarkMode ? '#374151' : '#E5E7EB', borderRadius: '2px' }}>
                     <div style={{ width: `${progress}%`, height: '100%', background: '#4F46E5', borderRadius: '2px', transition: 'width 0.3s' }} />
                 </div>
             </div>
@@ -494,10 +582,11 @@ export function StudentPage() {
             <div style={{ maxWidth: '800px', margin: '0 auto', padding: '24px' }}>
                 {question && (
                     <div style={{
-                        background: 'white',
+                        background: isDarkMode ? '#1F2937' : 'white',
                         borderRadius: '16px',
                         padding: '32px',
-                        boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+                        boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
+                        color: isDarkMode ? 'white' : 'inherit'
                     }}>
                         <h2 style={{ fontSize: '18px', marginBottom: '24px' }}>
                             <span style={{ color: '#4F46E5' }}>Câu {currentQuestion + 1}:</span> {question.text}
@@ -518,8 +607,9 @@ export function StudentPage() {
                                             padding: '16px',
                                             textAlign: 'left',
                                             borderRadius: '10px',
-                                            border: isSelected ? '2px solid #4F46E5' : '2px solid #E5E7EB',
-                                            background: isSelected ? '#EEF2FF' : 'white',
+                                            border: isSelected ? '2px solid #4F46E5' : (isDarkMode ? '2px solid #374151' : '2px solid #E5E7EB'),
+                                            background: isSelected ? (isDarkMode ? '#312E81' : '#EEF2FF') : (isDarkMode ? '#374151' : 'white'),
+                                            color: isDarkMode ? 'white' : 'inherit',
                                             marginBottom: '12px',
                                             cursor: 'pointer',
                                             fontSize: '15px',
@@ -537,22 +627,22 @@ export function StudentPage() {
                             display: 'flex',
                             justifyContent: 'space-between',
                             paddingTop: '24px',
-                            borderTop: '1px solid #E5E7EB'
+                            borderTop: isDarkMode ? '1px solid #374151' : '1px solid #E5E7EB'
                         }}>
                             <button
                                 onClick={() => setCurrentQuestion(Math.max(0, currentQuestion - 1))}
                                 disabled={currentQuestion === 0}
                                 style={{
                                     padding: '12px 24px',
-                                    background: currentQuestion === 0 ? '#E5E7EB' : 'white',
-                                    border: '1px solid #D1D5DB',
+                                    background: currentQuestion === 0 ? (isDarkMode ? '#374151' : '#E5E7EB') : (isDarkMode ? '#4B5563' : 'white'),
+                                    color: isDarkMode ? 'white' : 'inherit',
+                                    border: isDarkMode ? 'none' : '1px solid #D1D5DB',
                                     borderRadius: '8px',
                                     cursor: currentQuestion === 0 ? 'not-allowed' : 'pointer'
                                 }}
                             >
                                 ← Câu trước
                             </button>
-
                             {currentQuestion < questions.length - 1 ? (
                                 <button
                                     onClick={() => setCurrentQuestion(currentQuestion + 1)}
@@ -595,7 +685,7 @@ export function StudentPage() {
                             justifyContent: 'center',
                             marginTop: '24px',
                             paddingTop: '24px',
-                            borderTop: '1px solid #E5E7EB'
+                            borderTop: isDarkMode ? '1px solid #374151' : '1px solid #E5E7EB'
                         }}>
                             {questions.map((q: Question, idx: number) => {
                                 const isAnswered = answers[q.id.toString()];
@@ -610,8 +700,8 @@ export function StudentPage() {
                                             height: '36px',
                                             borderRadius: '50%',
                                             border: 'none',
-                                            background: isCurrent ? '#4F46E5' : isAnswered ? '#059669' : '#E5E7EB',
-                                            color: (isCurrent || isAnswered) ? 'white' : '#374151',
+                                            background: isCurrent ? '#4F46E5' : isAnswered ? '#059669' : (isDarkMode ? '#374151' : '#E5E7EB'),
+                                            color: (isCurrent || isAnswered) ? 'white' : (isDarkMode ? '#D1D5DB' : '#374151'),
                                             fontWeight: '500',
                                             cursor: 'pointer'
                                         }}

@@ -44,36 +44,118 @@ class SimpleCache:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        
+        # Granular Question Store
+        # context_hash: Hash of (Prompt + Files + Temp)
+        # question_hash: Hash of the question content itself to prevent duplicates
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS question_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                context_hash TEXT,
+                question_hash TEXT,
+                question_json TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(context_hash, question_hash)
+            )
+        """)
         self.conn.commit()
 
     def get(self, key: str):
         """
-        Get cached response by exact key match.
+        Get cached response by SHA256 hash of the key (exact match).
         """
         if not self.conn:
             self.init()
             
+        # Hash the key to ensure we don't store massive strings and avoid index issues
+        import hashlib
+        key_hash = hashlib.sha256(key.encode("utf-8")).hexdigest()
+            
         cursor = self.conn.cursor()
-        cursor.execute("SELECT response_json FROM cache_entries WHERE key_hash = ?", (key,))
+        cursor.execute("SELECT response_json FROM cache_entries WHERE key_hash = ?", (key_hash,))
         row = cursor.fetchone()
         
         if row:
-            print(f"✅ HASH CACHE HIT")
+            print(f"✅ HASH CACHE HIT (Hash: {key_hash[:8]}...)")
             return row[0]
         
         return None
 
     def save(self, key: str, response_json: str):
-        """Save key and response to cache"""
+        """Save key hash and response to cache"""
+        if not self.conn:
+            self.init()
+            
+        # Hash the key
+        import hashlib
+        key_hash = hashlib.sha256(key.encode("utf-8")).hexdigest()
+            
+        cursor = self.conn.cursor()
+        # Upsert logic (replace if exists)
+        cursor.execute("INSERT OR REPLACE INTO cache_entries (key_hash, response_json) VALUES (?, ?)", (key_hash, response_json))
+        self.conn.commit()
+        
+        print(f"💾 Saved to Hash Cache (Hash: {key_hash[:8]}...)")
+
+    def get_questions(self, context_hash: str):
+        """Get all questions for a given context"""
         if not self.conn:
             self.init()
             
         cursor = self.conn.cursor()
-        # Upsert logic (replace if exists)
-        cursor.execute("INSERT OR REPLACE INTO cache_entries (key_hash, response_json) VALUES (?, ?)", (key, response_json))
-        self.conn.commit()
+        cursor.execute("SELECT question_json FROM question_cache WHERE context_hash = ?", (context_hash,))
+        rows = cursor.fetchall()
         
-        print(f"💾 Saved to Hash Cache")
+        questions = [json.loads(row[0]) for row in rows]
+        print(f"✅ Retrieved {len(questions)} questions from cache for context {context_hash[:8]}...")
+        return questions
+
+    def add_question(self, context_hash: str, question_dict: dict):
+        """Add a single question to cache if not exists"""
+        if not self.conn:
+            self.init()
+            
+        import hashlib
+        # Ensure deterministic JSON for hashing
+        question_json = json.dumps(question_dict, ensure_ascii=False, sort_keys=True)
+        # Hash the question content to enforce uniqueness
+        question_hash = hashlib.md5(question_json.encode()).hexdigest()
+        
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("""
+                INSERT OR IGNORE INTO question_cache (context_hash, question_hash, question_json) 
+                VALUES (?, ?, ?)
+            """, (context_hash, question_hash, question_json))
+            self.conn.commit()
+            if cursor.rowcount > 0:
+                print(f"💾 Cached new question for context {context_hash[:8]}...")
+        except Exception as e:
+            print(f"⚠️ Error caching question: {e}")
+
+    def remove_question(self, context_hash: str, question_dict: dict):
+        """Remove a specific question from cache"""
+        if not self.conn:
+            self.init()
+            
+        import hashlib
+        # Ensure deterministic JSON for hashing
+        question_json = json.dumps(question_dict, ensure_ascii=False, sort_keys=True)
+        question_hash = hashlib.md5(question_json.encode()).hexdigest()
+        
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("""
+                DELETE FROM question_cache 
+                WHERE context_hash = ? AND question_hash = ?
+            """, (context_hash, question_hash))
+            self.conn.commit()
+            if cursor.rowcount > 0:
+                print(f"🗑️ Removed question from cache (Context: {context_hash[:8]}...)")
+            else:
+                print(f"⚠️ Question not found in cache to remove.")
+        except Exception as e:
+            print(f"⚠️ Error removing question from cache: {e}")
 
     def flush(self):
         # No-op for SQLite as we commit immediately, but kept for interface compatibility
@@ -95,3 +177,31 @@ def get_cached_response(prompt: str, threshold: float = None):
 
 def save_to_cache(prompt: str, response_json: str):
     return cache_service.save(prompt, response_json)
+
+def get_cached_questions(context_key: str):
+    # Hash the key first as per our convention (or passed hash? let's hash specific context key)
+    # Actually context_key from exam.py is full text, we should hash it here.
+    import hashlib
+    context_hash = hashlib.sha256(context_key.encode("utf-8")).hexdigest()
+    return cache_service.get_questions(context_hash)
+
+def add_cached_question(context_key: str, question_dict: dict):
+    import hashlib
+    context_hash = hashlib.sha256(context_key.encode("utf-8")).hexdigest()
+    return cache_service.add_question(context_hash, question_dict)
+
+def remove_cached_question(context_key: str, question_dict: dict):
+    import hashlib
+    context_hash = hashlib.sha256(context_key.encode("utf-8")).hexdigest()
+    return cache_service.remove_question(context_hash, question_dict)
+
+# Aliases for compatibility with exam.py
+get_questions = get_cached_questions
+add_question = add_cached_question
+# Batch is same as single add in loop for now, or just implement pass through if needed
+def get_questions_batch(context_keys: list):
+    # Not implemented efficiently yet, just loop
+    results = {}
+    for key in context_keys:
+        results[key] = get_cached_questions(key)
+    return results
