@@ -174,8 +174,27 @@ export function TeacherPage() {
             const result = await response.json();
             setExamResult(result);
 
-            // Reload the exams list
-            loadTeacherExams(teacherId);
+            // Add new exam to list immediately with the target question count
+            const targetQuestionCount = Number(questionCount) || 5;
+            const newExam = {
+                exam_id: result.exam_id,
+                prompt: prompt.trim(),
+                question_count: targetQuestionCount,
+                student_count: 0,
+                student_url: result.student_url,
+                created_at: new Date().toISOString()
+            };
+            setTeacherExams(prev => [newExam, ...prev]);
+
+            // Auto-select the new exam to start SSE connection
+            setSelectedExam(result.exam_id);
+            setExamFull({
+                exam_id: result.exam_id,
+                prompt: prompt.trim(),
+                questions: [],
+                created_at: new Date().toISOString()
+            });
+            setViewMode('questions');
         } catch (err: any) {
             setError(err.message || 'Có lỗi xảy ra');
         } finally {
@@ -344,6 +363,14 @@ export function TeacherPage() {
                             questions: [...prev.questions, newQuestion]
                         };
                     });
+
+                    // Also update question count in the exam list
+                    setTeacherExams(prevExams => prevExams.map(exam => {
+                        if (exam.exam_id === selectedExam) {
+                            return { ...exam, question_count: exam.question_count + 1 };
+                        }
+                        return exam;
+                    }));
                 } else if (data.type === 'new_submission') {
                     const newResult = data.data;
 
@@ -425,6 +452,216 @@ export function TeacherPage() {
             console.error('Error deleting question:', err);
             alert('Có lỗi xảy ra khi xóa câu hỏi. Vui lòng tải lại trang.');
             // Revert UI if needed? Complex. For now, alert to reload.
+        }
+    };
+
+    const deleteExam = async (examId: string) => {
+        // Instant delete from UI
+        setTeacherExams(prev => prev.filter(exam => exam.exam_id !== examId));
+
+        // Clear right panel if this exam was selected
+        if (selectedExam === examId) {
+            setSelectedExam(null);
+            setExamFull(null);
+            setExamStats(null);
+        }
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/exam/exam/${examId}`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) {
+                throw new Error("Failed to delete");
+            }
+        } catch (err) {
+            console.error('Error deleting exam:', err);
+            alert('Có lỗi xảy ra khi xóa bài kiểm tra. Vui lòng tải lại trang.');
+            // Reload exams to revert
+            loadTeacherExams(teacherId);
+        }
+    };
+
+    const exportExamToPDF = async (examId: string, examPrompt: string) => {
+        try {
+            // Fetch full exam data if not already loaded
+            const response = await fetch(`${API_BASE_URL}/api/exam/exam/${examId}`);
+            if (!response.ok) throw new Error("Cannot fetch exam");
+            const examData = await response.json();
+
+            // Helper function to format correct answer based on question type
+            const formatCorrectAnswer = (q: any): string => {
+                const qType = q.type || 'single_choice';
+
+                if (qType === 'fill_in_blanks') {
+                    // Show words to fill
+                    const answers = q.correct_answers || [];
+                    return answers.map((a: string, i: number) => `(${i + 1}) ${a}`).join(', ');
+                } else if (qType === 'multi_choice') {
+                    // Show all correct answer letters
+                    const correctIdxs = q.correct_answers || [];
+                    const letters = correctIdxs.map((idx: number) => String.fromCharCode(65 + idx));
+                    return letters.join(', ');
+                } else {
+                    // single_choice, image_single_choice, audio_single_choice
+                    const correctIdx = q.correct_answer;
+                    if (typeof correctIdx === 'number') {
+                        return String.fromCharCode(65 + correctIdx);
+                    }
+                    return String(correctIdx || 'A');
+                }
+            };
+
+            // Helper function to render question content based on type
+            const renderQuestion = (q: any, idx: number): string => {
+                const qType = q.type || 'single_choice';
+                const questionText = q.question || q.text || '';
+
+                if (qType === 'fill_in_blanks') {
+                    // Check if answers are numeric (math) or text (language)
+                    const words = q.correct_answers || [];
+                    // If all answers are numbers, don't show word bank (math questions)
+                    const isNumeric = words.every((w: string) => !isNaN(Number(w)) || /^[\d\s+\-*/=<>]+$/.test(w));
+
+                    if (isNumeric) {
+                        // Math fill-in-blanks - no word bank
+                        return `
+                            <div class="question">
+                                <div class="question-header">Câu ${idx + 1} (Điền số):</div>
+                                <div class="question-text">${questionText}</div>
+                            </div>
+                        `;
+                    } else {
+                        // Language fill-in-blanks - show word bank
+                        const shuffledWords = [...words].sort(() => Math.random() - 0.5);
+                        const wordBank = shuffledWords.join(' | ');
+
+                        return `
+                            <div class="question">
+                                <div class="question-header">Câu ${idx + 1} (Điền từ):</div>
+                                <div class="word-bank">📝 Từ cần điền: <strong>${wordBank}</strong></div>
+                                <div class="question-text">${questionText}</div>
+                            </div>
+                        `;
+                    }
+                } else if (qType === 'multi_choice') {
+                    // Multiple choice - show options with note
+                    return `
+                        <div class="question">
+                            <div class="question-header">Câu ${idx + 1} (Chọn nhiều đáp án):</div>
+                            <div class="question-text">${questionText}</div>
+                            <div class="options">
+                                ${(q.options || []).map((opt: string, optIdx: number) => `
+                                    <div class="option">${String.fromCharCode(65 + optIdx)}. ${opt}</div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                } else if (qType.includes('image')) {
+                    // Image question - embed the image
+                    const imageUrl = q.image_url || '';
+                    const imageBase64 = q.image_base64 || '';
+                    const imageSrc = imageBase64 ? `data:image/png;base64,${imageBase64}` : imageUrl;
+
+                    return `
+                        <div class="question">
+                            <div class="question-header">Câu ${idx + 1} (Có hình ảnh):</div>
+                            ${imageSrc ? `<div class="question-image"><img src="${imageSrc}" alt="Question image" /></div>` : ''}
+                            <div class="question-text">${questionText}</div>
+                            <div class="options">
+                                ${(q.options || []).map((opt: string, optIdx: number) => `
+                                    <div class="option">${String.fromCharCode(65 + optIdx)}. ${opt}</div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                } else if (qType.includes('audio')) {
+                    // Audio question - note that audio cannot be embedded in PDF
+                    return `
+                        <div class="question">
+                            <div class="question-header">Câu ${idx + 1} (Nghe hiểu):</div>
+                            <div class="audio-note">🎧 <em>Câu hỏi này yêu cầu nghe audio. Vui lòng sử dụng phiên bản online.</em></div>
+                            <div class="question-text">${questionText}</div>
+                            <div class="options">
+                                ${(q.options || []).map((opt: string, optIdx: number) => `
+                                    <div class="option">${String.fromCharCode(65 + optIdx)}. ${opt}</div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    // Single choice (normal)
+                    return `
+                        <div class="question">
+                            <div class="question-header">Câu ${idx + 1}:</div>
+                            <div class="question-text">${questionText}</div>
+                            <div class="options">
+                                ${(q.options || []).map((opt: string, optIdx: number) => `
+                                    <div class="option">${String.fromCharCode(65 + optIdx)}. ${opt}</div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+            };
+
+            // Generate HTML content for PDF
+            const htmlContent = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <style>
+                        body { font-family: Arial, sans-serif; padding: 40px; line-height: 1.6; }
+                        h1 { font-size: 24px; margin-bottom: 10px; color: #1a1a1a; }
+                        .exam-info { font-size: 14px; color: #666; margin-bottom: 30px; }
+                        .question { margin-bottom: 25px; page-break-inside: avoid; }
+                        .question-header { font-weight: bold; font-size: 16px; margin-bottom: 10px; }
+                        .question-text { margin-bottom: 12px; }
+                        .question-image { margin: 10px 0; text-align: center; }
+                        .question-image img { max-width: 300px; max-height: 200px; border: 1px solid #ddd; border-radius: 8px; }
+                        .word-bank { background: #f0f9ff; padding: 8px 12px; border-radius: 6px; margin-bottom: 10px; border-left: 3px solid #3b82f6; }
+                        .audio-note { background: #fef3c7; padding: 8px 12px; border-radius: 6px; margin-bottom: 10px; border-left: 3px solid #f59e0b; }
+                        .options { margin-left: 20px; }
+                        .option { margin-bottom: 6px; }
+                        .answer-key { margin-top: 40px; border-top: 2px solid #333; padding-top: 20px; }
+                        .answer-key h2 { font-size: 18px; margin-bottom: 15px; }
+                        .answer-row { margin-bottom: 8px; }
+                        .answer-row strong { color: #059669; }
+                    </style>
+                </head>
+                <body>
+                    <h1>Bài kiểm tra</h1>
+                    <div class="exam-info">
+                        <strong>Chủ đề:</strong> ${examPrompt}<br>
+                        <strong>Số câu:</strong> ${examData.questions?.length || 0} câu
+                    </div>
+                    
+                    ${(examData.questions || []).map((q: any, idx: number) => renderQuestion(q, idx)).join('')}
+                    
+                    <div class="answer-key">
+                        <h2>Đáp án</h2>
+                        ${(examData.questions || []).map((q: any, idx: number) => {
+                const answer = formatCorrectAnswer(q);
+                return `<div class="answer-row">Câu ${idx + 1}: <strong>${answer}</strong></div>`;
+            }).join('')}
+                    </div>
+                </body>
+                </html>
+            `;
+
+            // Open print dialog
+            const printWindow = window.open('', '_blank');
+            if (printWindow) {
+                printWindow.document.write(htmlContent);
+                printWindow.document.close();
+                printWindow.onload = () => {
+                    printWindow.print();
+                };
+            }
+        } catch (err) {
+            console.error('Error exporting PDF:', err);
+            alert('Có lỗi khi xuất file. Vui lòng thử lại.');
         }
     };
 
@@ -888,12 +1125,51 @@ export function TeacherPage() {
                                     background: selectedExam === exam.exam_id ? (isDarkMode ? '#312E81' : '#EEF2FF') : (isDarkMode ? '#374151' : '#F9FAFB'),
                                     borderRadius: '10px',
                                     marginBottom: '10px',
-                                    border: selectedExam === exam.exam_id ? '2px solid #4F46E5' : '2px solid transparent'
+                                    border: selectedExam === exam.exam_id ? '2px solid #4F46E5' : '2px solid transparent',
+                                    position: 'relative'
                                 }}
                             >
-                                <p style={{ fontWeight: '500', fontSize: '14px', marginBottom: '6px', color: isDarkMode ? 'white' : 'inherit' }}>
-                                    {exam.prompt.length > 40 ? exam.prompt.substring(0, 40) + '...' : exam.prompt}
-                                </p>
+                                {/* Delete button - top right */}
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); deleteExam(exam.exam_id); }}
+                                    style={{
+                                        position: 'absolute',
+                                        top: '8px',
+                                        right: '8px',
+                                        padding: '4px 6px',
+                                        background: '#FEE2E2',
+                                        color: '#DC2626',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        fontSize: '12px',
+                                        cursor: 'pointer',
+                                        lineHeight: 1
+                                    }}
+                                    title="Xóa bài kiểm tra"
+                                >
+                                    🗑️
+                                </button>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', paddingRight: '30px' }}>
+                                    <p style={{ fontWeight: '500', fontSize: '14px', margin: 0, color: isDarkMode ? 'white' : 'inherit' }}>
+                                        {exam.prompt.length > 40 ? exam.prompt.substring(0, 40) + '...' : exam.prompt}
+                                    </p>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); copyExamLink(exam.exam_id, exam.student_url); }}
+                                        style={{
+                                            padding: '4px 6px',
+                                            background: copiedExamId === exam.exam_id ? 'transparent' : '#E5E7EB',
+                                            border: 'none',
+                                            borderRadius: '4px',
+                                            cursor: 'pointer',
+                                            fontSize: '14px',
+                                            lineHeight: 1,
+                                            color: copiedExamId === exam.exam_id ? '#10B981' : 'inherit'
+                                        }}
+                                        title={copiedExamId === exam.exam_id ? 'Đã copy!' : 'Copy link học sinh'}
+                                    >
+                                        {copiedExamId === exam.exam_id ? '✓' : '📋'}
+                                    </button>
+                                </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#6B7280', marginBottom: '10px' }}>
                                     <span>{exam.question_count} câu</span>
                                     <span>{exam.student_count} học sinh</span>
@@ -930,18 +1206,18 @@ export function TeacherPage() {
                                         📊 Thống kê
                                     </button>
                                     <button
-                                        onClick={(e) => { e.stopPropagation(); copyExamLink(exam.exam_id, exam.student_url); }}
+                                        onClick={(e) => { e.stopPropagation(); exportExamToPDF(exam.exam_id, exam.prompt); }}
                                         style={{
                                             padding: '6px 10px',
-                                            background: copiedExamId === exam.exam_id ? '#059669' : '#E5E7EB',
-                                            color: copiedExamId === exam.exam_id ? 'white' : '#374151',
+                                            background: '#E5E7EB',
+                                            color: '#374151',
                                             border: 'none',
                                             borderRadius: '6px',
                                             fontSize: '11px',
                                             cursor: 'pointer'
                                         }}
                                     >
-                                        {copiedExamId === exam.exam_id ? '✓ Copied' : '📋 Copy link'}
+                                        📥 Xuất file
                                     </button>
                                 </div>
                             </div>

@@ -185,15 +185,15 @@ export function StudentPage() {
         const question = questions.find(q => q.id === questionId);
         if (!question) return;
 
-        const controller = new AbortController(); // Declare controller outside try block
+        // Abort previous request FIRST, before creating new controller
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+        }
+
+        const controller = new AbortController();
         abortControllerRef.current = controller;
 
         try {
-            // Abort previous request
-            if (abortControllerRef.current) {
-                abortControllerRef.current.abort();
-            }
-
             setIsChatLoading(true);
 
             const response = await fetch(`${API_BASE_URL}/api/tutor/chat`, {
