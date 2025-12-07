@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 import io
 from openai import OpenAI
-from pydub import AudioSegment
+# from pydub import AudioSegment # Removed to avoid ffmpeg dependency
 from app.config import settings
 
 
@@ -43,7 +43,7 @@ async def generate_audio(
             "model": model,
             "voice": voice,
             "input": text,
-            "speed": 0.8
+            "speed": 0.9
         }
         
         if instructions:
@@ -114,7 +114,8 @@ async def generate_audio_from_script(
     Returns:
         Relative path to saved audio file, or None if failed
     """
-    combined_audio = AudioSegment.empty()
+    # combined_audio = AudioSegment.empty() # Removed pydub
+    combined_audio_bytes = b""
     
     try:
         # Check if script is empty
@@ -151,25 +152,32 @@ async def generate_audio_from_script(
         # Execute in parallel
         results = await asyncio.gather(*tasks)
 
-        # Stitch results
+        # Stitch results (Direct Byte Concatenation)
         for i, audio_bytes in enumerate(results):
             segment_info = valid_segments[i]
             
             if audio_bytes:
-                # Convert bytes to pydub AudioSegment
-                segment_audio = AudioSegment.from_file(io.BytesIO(audio_bytes), format="mp3")
-                combined_audio += segment_audio
+                # Convert bytes to pydub AudioSegment - REMOVED
+                # segment_audio = AudioSegment.from_file(io.BytesIO(audio_bytes), format="mp3")
+                # combined_audio += segment_audio
                 
-                # Add a small pause between segments (300ms)
-                combined_audio += AudioSegment.silent(duration=300)
+                # Add a small pause between segments (300ms) - REMOVED (Requires generating silent mp3 frame)
+                # combined_audio += AudioSegment.silent(duration=300)
+                
+                # Direct concat
+                combined_audio_bytes += audio_bytes
+                
             else:
                 print(f"⚠️ Failed to generate audio for segment {segment_info['index']+1}")
 
         # Save combined audio
         filepath = AUDIO_DIR / f"{filename}.mp3"
         
-        # Export as MP3
-        combined_audio.export(filepath, format="mp3")
+        # Export as MP3 - REMOVED
+        # combined_audio.export(filepath, format="mp3")
+        
+        with open(filepath, "wb") as f:
+            f.write(combined_audio_bytes)
         
         print(f"✅ Saved dialogue audio: {filepath}")
         return f"audio/{filename}.mp3"

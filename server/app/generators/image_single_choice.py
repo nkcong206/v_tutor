@@ -4,6 +4,7 @@ Image Single Choice Question Generator.
 Generates questions with AI-generated images + single choice answers.
 """
 import json
+import random
 from typing import Optional
 from app.generators.base import BaseQuestionGenerator
 from app.generators.schemas import ImageSingleChoiceQuestion, GenImageSingleChoiceQuestion, letter_to_index
@@ -47,6 +48,18 @@ Trả về JSON theo format:
 
 Sử dụng format strict JSON."""
 
+    def _shuffle_options(self, options: list, correct_answer: int) -> tuple:
+        """Shuffle options and return new options list with updated correct_answer index."""
+        indexed_options = list(enumerate(options))
+        random.shuffle(indexed_options)
+        new_correct_answer = None
+        shuffled_options = []
+        for new_idx, (old_idx, option) in enumerate(indexed_options):
+            shuffled_options.append(option)
+            if old_idx == correct_answer:
+                new_correct_answer = new_idx
+        return shuffled_options, new_correct_answer
+
     async def generate(
         self,
         prompt: str,
@@ -83,11 +96,21 @@ Sử dụng format strict JSON."""
                      print(f"❌ Failed to generate image for prompt: {gen_question.image_prompt}")
                      return None
             
+            # Shuffle options to randomize correct answer position
+            shuffled_options, new_correct_answer = self._shuffle_options(
+                gen_question.options,
+                gen_question.correct_answer
+            )
+            
             return ImageSingleChoiceQuestion(
                 id=question_id,
                 type="image_single_choice",
                 image_base64=image_base64,
-                **gen_question.model_dump()
+                image_prompt=gen_question.image_prompt,
+                text=gen_question.text,
+                options=shuffled_options,
+                correct_answer=new_correct_answer,
+                explanation=gen_question.explanation
             )
         except Exception as e:
             print(f"❌ Error processing generated question: {e}")
@@ -96,3 +119,4 @@ Sử dụng format strict JSON."""
 
 # Singleton instance
 image_single_choice_generator = ImageSingleChoiceGenerator()
+

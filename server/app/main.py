@@ -44,9 +44,10 @@ async def startup_event():
     
     # Clean up data directory on startup
     import shutil
-    if os.path.exists("data"):
-        shutil.rmtree("data")
-        print("🧹 Cleaned up 'data' directory")
+    # data directory cleanup removed to persist audio files
+    # if os.path.exists("data"):
+    #     shutil.rmtree("data")
+    #     print("🧹 Cleaned up 'data' directory")
     os.makedirs("data", exist_ok=True)
 
 

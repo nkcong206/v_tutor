@@ -4,6 +4,7 @@ Multi Choice Question Generator.
 Generates text-only multiple choice questions (select all that apply).
 """
 import json
+import random
 from typing import Optional
 from app.generators.base import BaseQuestionGenerator
 from app.generators.schemas import letter_to_index, GenMultiChoiceQuestion, MultiChoiceQuestion
@@ -29,6 +30,18 @@ QUAN TRỌNG:
 
 Sử dụng format strict JSON cho GenMultiChoiceQuestion."""
 
+    def _shuffle_options(self, options: list, correct_answers: list) -> tuple:
+        """Shuffle options and return new options list with updated correct_answers indices."""
+        indexed_options = list(enumerate(options))
+        random.shuffle(indexed_options)
+        new_correct_answers = []
+        shuffled_options = []
+        for new_idx, (old_idx, option) in enumerate(indexed_options):
+            shuffled_options.append(option)
+            if old_idx in correct_answers:
+                new_correct_answers.append(new_idx)
+        return shuffled_options, sorted(new_correct_answers)
+
     async def generate(
         self,
         prompt: str,
@@ -51,10 +64,19 @@ Sử dụng format strict JSON cho GenMultiChoiceQuestion."""
         )
         
         if gen_question:
+            # Shuffle options to randomize correct answer positions
+            shuffled_options, new_correct_answers = self._shuffle_options(
+                gen_question.options,
+                gen_question.correct_answers
+            )
+            
             return MultiChoiceQuestion(
                 id=question_id,
                 type="multi_choice",
-                **gen_question.model_dump()
+                text=gen_question.text,
+                options=shuffled_options,
+                correct_answers=new_correct_answers,
+                explanation=gen_question.explanation
             )
             
         return None
@@ -62,3 +84,4 @@ Sử dụng format strict JSON cho GenMultiChoiceQuestion."""
 
 # Singleton instance
 multi_choice_generator = MultiChoiceGenerator()
+

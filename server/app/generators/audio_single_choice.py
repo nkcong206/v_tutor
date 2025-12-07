@@ -4,6 +4,7 @@ Audio Single Choice Question Generator.
 Generates questions with AI-generated audio + single choice answers.
 """
 import json
+import random
 import uuid
 from typing import Optional
 from app.generators.base import BaseQuestionGenerator
@@ -36,6 +37,18 @@ QUAN TRỌNG:
 - Giải thích PHẢI là TIẾNG VIỆT.
 
 Sử dụng format strict JSON for GenAudioSingleChoiceQuestion."""
+
+    def _shuffle_options(self, options: list, correct_answer: int) -> tuple:
+        """Shuffle options and return new options list with updated correct_answer index."""
+        indexed_options = list(enumerate(options))
+        random.shuffle(indexed_options)
+        new_correct_answer = None
+        shuffled_options = []
+        for new_idx, (old_idx, option) in enumerate(indexed_options):
+            shuffled_options.append(option)
+            if old_idx == correct_answer:
+                new_correct_answer = new_idx
+        return shuffled_options, new_correct_answer
 
     async def generate(
         self,
@@ -73,12 +86,22 @@ Sử dụng format strict JSON for GenAudioSingleChoiceQuestion."""
                     filename=audio_filename
                 )
             
+            # Shuffle options to randomize correct answer position
+            shuffled_options, new_correct_answer = self._shuffle_options(
+                gen_question.options,
+                gen_question.correct_answer
+            )
+            
             # Convert to FULL schema (inject type, ID, audio_url)
             return AudioSingleChoiceQuestion(
                 id=question_id,
                 type="audio_single_choice",
                 audio_url=audio_url,
-                **gen_question.model_dump()
+                audio_script=gen_question.audio_script,
+                text=gen_question.text,
+                options=shuffled_options,
+                correct_answer=new_correct_answer,
+                explanation=gen_question.explanation
             )
         except Exception as e:
             print(f"❌ Error processing generated question: {e}")

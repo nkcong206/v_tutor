@@ -40,36 +40,42 @@ Nhiệm vụ:
 1. Phân tích nội dung (prompt) để xác định MÔN HỌC (Toán, Tiếng Việt, Tiếng Anh, Sử, Địa, Tin học).
 2. Chọn danh sách {question_count} dạng câu hỏi phù hợp nhất theo quy tắc sau:
 
-QUY TẮC CHỌN DẠNG CÂU HỎI (Ưu tiên Tiểu học):
+QUY TẮC CHỌN DẠNG CÂU HỎI (Ưu tiên ĐA DẠNG):
+
+⚠️ YÊU CẦU QUAN TRỌNG: BẮT BUỘC phải đa dạng loại câu hỏi! 
+- Nếu có >= 3 câu: PHẢI có ít nhất 2-3 loại KHÁC NHAU.
+- TRÁNH chỉ dùng mỗi single_choice cho tất cả.
+- Ưu tiên xen kẽ: single_choice, multi_choice, fill_in_blanks.
 
 1. Môn TIẾNG ANH (English):
    - Ưu tiên cao: audio_single_choice, audio_multi_choice (Luyện nghe).
-   - Tốt: image_single_choice (Nhìn hình đoán từ).
-   - Cơ bản: single_choice, multi_choice, fill_in_blanks.
+   - Tốt: image_single_choice, fill_in_blanks (Điền từ vựng).
+   - Cơ bản: single_choice, multi_choice.
+   - Khuyến nghị phân bổ: 30% audio, 30% fill_in_blanks, 40% choice.
 
 2. Môn ĐỊA LÝ (Geography):
    - Ưu tiên: image_single_choice (Bản đồ, hình ảnh thiên nhiên).
-   - Cơ bản: single_choice, fill_in_blanks.
+   - Cơ bản: single_choice, multi_choice, fill_in_blanks.
 
 3. Môn TOÁN (Math) / TIN HỌC (CS):
-   - Cơ bản: single_choice, fill_in_blanks (Tính toán, điền số).
-   - Có thể dùng: image_single_choice (Hình học, mô hình) nhưng không ưu tiên quá nhiều trừ khi cần trực quan.
+   - Ưu tiên: fill_in_blanks (Tính toán, điền số), single_choice.
+   - Có thể dùng: image_single_choice (Hình học), multi_choice.
+   - Khuyến nghị: 40% fill_in_blanks, 40% single_choice, 20% khác.
 
 4. Môn TIẾNG VIỆT (Literature) / LỊCH SỬ (History):
-   - Ưu tiên: text only (single_choice, multi_choice, fill_in_blanks).
-   - Hạn chế image trừ khi cần thiết.
+   - Ưu tiên: multi_choice, fill_in_blanks, single_choice (Xen kẽ).
    - KHÔNG dùng Audio.
 
 LƯU Ý QUAN TRỌNG:
 - Dạng AUDIO chỉ dành cho TIẾNG ANH. Các môn khác TUYỆT ĐỐI KHÔNG DÙNG AUDIO.
-- Nếu không xác định được môn, dùng dạng text (single_choice) là an toàn nhất.
+- Nếu không xác định được môn, dùng đa dạng: single_choice, multi_choice, fill_in_blanks.
 
 Danh sách các dạng ĐƯỢC PHÉP dùng:
 {json.dumps(available_types, ensure_ascii=False)}
 
 YÊU CẦU OUTPUT:
 - Trả về JSON array chứa đúng {question_count} string là các dạng câu hỏi đã chọn.
-- Ví dụ: ["single_choice", "image_single_choice", "..."]
+- Ví dụ: ["single_choice", "fill_in_blanks", "multi_choice", "image_single_choice"]
 
 CHỈ trả về JSON array."""
 
@@ -112,9 +118,19 @@ CHỈ trả về JSON array."""
         while len(validated_types) < question_count:
             validated_types.append("single_choice")
         
-        return validated_types[:question_count]
+        validated_types = validated_types[:question_count]
+        
+        # ENFORCE DIVERSITY: If all same type and count >= 3, mix it up
+        if question_count >= 3 and len(set(validated_types)) == 1:
+            print(f"⚠️ All same type detected, enforcing diversity...")
+            diverse_types = ["single_choice", "multi_choice", "fill_in_blanks"]
+            validated_types = [diverse_types[i % len(diverse_types)] for i in range(question_count)]
+        
+        return validated_types
         
     except Exception as e:
         print(f"❌ Error selecting question types: {e}")
-        # Fallback: all single choice
-        return ["single_choice"] * question_count
+        # Fallback: diverse mix instead of all single choice
+        diverse_fallback = ["single_choice", "multi_choice", "fill_in_blanks"]
+        return [diverse_fallback[i % len(diverse_fallback)] for i in range(question_count)]
+

@@ -132,7 +132,9 @@ async def process_generated_question_async(exam_id: str, q_dict: dict, qt: str):
         "type": qt,
         "image_url": q_dict.get("image_url"),
         "image_base64": q_dict.get("image_base64"),
+        "image_base64": q_dict.get("image_base64"),
         "audio_url": audio_url,
+        "audio_src": q_dict.get("audio_url"),
         "blanks": q_dict.get("blanks"), 
         "correct_answers": q_dict.get("correct_answers"),
     }
@@ -374,7 +376,9 @@ async def get_exam(exam_id: str):
             "image_url": q.get("image_url"),
             "image_base64": q.get("image_base64"),
             "image_description": image_desc,
+            "image_description": image_desc,
             "audio_url": q.get("audio_url"),
+            "audio_src": q.get("audio_src"),
             "audio_script_text": audio_text,
             "blanks": q.get("blanks"),
             "correct_answers": q.get("correct_answers")
@@ -855,3 +859,28 @@ async def get_teacher_exams(teacher_id: str):
         "exams": exams_list,
         "total_exams": len(exams_list)
     }
+
+
+@router.delete("/exam/{exam_id}")
+async def delete_exam(exam_id: str):
+    """
+    Delete an exam and all associated data
+    """
+    if exam_id not in exams_db:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bài kiểm tra")
+    
+    exam = exams_db[exam_id]
+    teacher_id = exam.get("teacher_id")
+    
+    # Remove from exams_db
+    del exams_db[exam_id]
+    
+    # Remove from students_db
+    if exam_id in students_db:
+        del students_db[exam_id]
+    
+    # Remove from teacher's exam list
+    if teacher_id and teacher_id in teacher_exams_db:
+        teacher_exams_db[teacher_id] = [eid for eid in teacher_exams_db[teacher_id] if eid != exam_id]
+    
+    return {"success": True, "message": "Bài kiểm tra đã được xóa"}

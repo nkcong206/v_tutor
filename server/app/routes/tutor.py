@@ -272,6 +272,117 @@ async def tutor_chat(request: TutorChatRequest):
         raise HTTPException(status_code=500, detail=f"Lỗi AI Tutor: {str(e)}")
 
 
+from fastapi.responses import StreamingResponse
+
+@router.post("/stream")
+async def tutor_chat_stream(request: TutorChatRequest):
+    """
+    Streaming AI Tutor chat endpoint.
+    Streams the text response first, followed by a delimiter '|||SUGGESTIONS|||',
+    then the JSON array of suggestions.
+    """
+    import json
+    
+    # Create chat key for history
+    chat_key = f"{request.exam_id}_{request.student_name}"
+    if chat_key not in tutor_chats_db:
+        tutor_chats_db[chat_key] = []
+    
+    # Get system prompt
+    system_prompt_content = get_system_prompt(
+        request.question_text,
+        request.options,
+        request.selected_answer,
+        request.correct_answer,
+        request.is_correct,
+        request.attempt_count,
+        request.image_description,
+        request.audio_script_text
+    )
+    
+    # We want to force the model to output just the message text first, then suggestions.
+    # We will tweak the prompt slightly for this specific streaming endpoint if needed,
+    # OR we can just ask for the same JSON and parse it manually?
+    # Parsing broken JSON while streaming is hard.
+    # EASY WAY: Ask for plain text first, then a delimiter, then the suggestions list.
+    
+    stream_prompt = system_prompt_content.replace(
+        "OUTPUT FORMAT (JSON ONLY):", 
+        "OUTPUT FORMAT (STREAMING COMPATIBLE):"
+    ).replace(
+        """Bạn bắt buộc phải trả về JSON format như sau (không thêm text nào khác):
+{
+  "message": "Nội dung phản hồi của AI...",
+  "suggestions": ["Gợi ý 1...", "Gợi ý 2...", "Gợi ý 3...", "Gợi ý 4..."]
+}""",
+        """Bạn hãy trả về kết quả theo đúng định dạng sau (quan trọng để hệ thống streaming hoạt động):
+
+[Nội dung phản hồi của bạn]
+|||SUGGESTIONS|||
+["Gợi ý 1", "Gợi ý 2", "Gợi ý 3", "Gợi ý 4"]
+
+Lưu ý:
+1. Phần nội dung phản hồi viết bình thường (text).
+2. Sau khi xong nội dung, bắt buộc xuống dòng và viết chính xác dòng: |||SUGGESTIONS|||
+3. Sau dòng đó là một JSON Array chứa 4 gợi ý."""
+    )
+    
+    messages = [{"role": "system", "content": stream_prompt}]
+    
+    # Add recent history (last 5 messages for context)
+    recent_history = tutor_chats_db[chat_key][-5:]
+    for msg in recent_history:
+        messages.append({"role": msg["role"], "content": msg["content"]})
+        
+    messages.append({"role": "user", "content": request.message})
+    
+    async def generate_stream():
+        full_response_text = ""
+        
+        try:
+            stream = client.chat.completions.create(
+                model="gpt-4o", # Or usage model from settings
+                messages=messages,
+                stream=True,
+                temperature=0.7,
+                max_tokens=2000
+            )
+            
+            for chunk in stream:
+                if chunk.choices[0].delta.content is not None:
+                    content = chunk.choices[0].delta.content
+                    full_response_text += content
+                    yield content
+
+            # After streaming is done, we save to history
+            # We need to parse out the message and suggestions to save properly
+            parts = full_response_text.split("|||SUGGESTIONS|||")
+            ai_message = parts[0].strip()
+            suggestions = []
+            if len(parts) > 1:
+                try:
+                    suggestions = json.loads(parts[1].strip())
+                except:
+                    pass
+            
+            # Save to history
+            tutor_chats_db[chat_key].append({
+                "role": "user",
+                "content": request.message,
+                "timestamp": datetime.now().isoformat()
+            })
+            tutor_chats_db[chat_key].append({
+                "role": "assistant",
+                "content": ai_message, # Save clean message
+                "timestamp": datetime.now().isoformat()
+            })
+            
+        except Exception as e:
+            yield f"\n[Lỗi kết nối AI: {str(e)}]"
+
+    return StreamingResponse(generate_stream(), media_type="text/plain")
+
+
 @router.get("/history/{exam_id}/{student_name}")
 async def get_chat_history(exam_id: str, student_name: str):
     """Get chat history for analytics"""
