@@ -174,12 +174,11 @@ export function TeacherPage() {
             const result = await response.json();
             setExamResult(result);
 
-            // Add new exam to list immediately with the target question count
-            const targetQuestionCount = Number(questionCount) || 5;
+            // Add new exam to list immediately with 0 questions (will update via SSE)
             const newExam = {
                 exam_id: result.exam_id,
                 prompt: prompt.trim(),
-                question_count: targetQuestionCount,
+                question_count: 0,
                 student_count: 0,
                 student_url: result.student_url,
                 created_at: new Date().toISOString()
@@ -420,6 +419,31 @@ export function TeacherPage() {
             // or just log. Closing it might stop reconnection logic.
         };
 
+        // After SSE opens, fetch latest exam data to catch any questions
+        // that were generated before SSE connection was established
+        eventSource.onopen = async () => {
+            try {
+                await new Promise(resolve => setTimeout(resolve, 500)); // Small delay
+                const response = await fetch(`${API_BASE_URL}/api/exam/exam/${selectedExam}/full`);
+                if (response.ok) {
+                    const fullData = await response.json();
+                    if (fullData && fullData.questions) {
+                        // Update examFull with latest data
+                        setExamFull(fullData);
+                        // Update question count in exam list
+                        setTeacherExams(prevExams => prevExams.map(exam => {
+                            if (exam.exam_id === selectedExam) {
+                                return { ...exam, question_count: fullData.questions.length };
+                            }
+                            return exam;
+                        }));
+                    }
+                }
+            } catch (e) {
+                console.error("Error syncing exam data:", e);
+            }
+        };
+
         return () => {
             eventSource.close();
         };
@@ -576,11 +600,17 @@ export function TeacherPage() {
                         </div>
                     `;
                 } else if (qType.includes('audio')) {
-                    // Audio question - note that audio cannot be embedded in PDF
+                    // Audio question - include audio URL (use file path, not base64)
+                    const audioFilePath = q.audio_file_path || q.audio_src || '';
+                    // Filter out base64 data URLs
+                    const audioPath = audioFilePath && !audioFilePath.startsWith('data:')
+                        ? `http://localhost:8000/uploads/${audioFilePath}`
+                        : '';
                     return `
                         <div class="question">
                             <div class="question-header">Câu ${idx + 1} (Nghe hiểu):</div>
-                            <div class="audio-note">🎧 <em>Câu hỏi này yêu cầu nghe audio. Vui lòng sử dụng phiên bản online.</em></div>
+                            <div class="audio-note">🎧 <em>Câu hỏi này yêu cầu nghe audio.</em></div>
+                            ${audioPath ? `<div class="audio-link">📁 File audio: <a href="${audioPath}">${audioPath}</a></div>` : ''}
                             <div class="question-text">${questionText}</div>
                             <div class="options">
                                 ${(q.options || []).map((opt: string, optIdx: number) => `
@@ -622,6 +652,9 @@ export function TeacherPage() {
                         .question-image img { max-width: 300px; max-height: 200px; border: 1px solid #ddd; border-radius: 8px; }
                         .word-bank { background: #f0f9ff; padding: 8px 12px; border-radius: 6px; margin-bottom: 10px; border-left: 3px solid #3b82f6; }
                         .audio-note { background: #fef3c7; padding: 8px 12px; border-radius: 6px; margin-bottom: 10px; border-left: 3px solid #f59e0b; }
+                        .audio-link { background: #e0f2fe; padding: 8px 12px; border-radius: 6px; margin-bottom: 10px; border-left: 3px solid #0284c7; font-size: 12px; word-break: break-all; }
+                        .audio-link a { color: #0284c7; text-decoration: none; }
+                        .audio-link a:hover { text-decoration: underline; }
                         .options { margin-left: 20px; }
                         .option { margin-bottom: 6px; }
                         .answer-key { margin-top: 40px; border-top: 2px solid #333; padding-top: 20px; }
@@ -1106,13 +1139,17 @@ export function TeacherPage() {
                     background: isDarkMode ? '#1F2937' : 'white',
                     borderRadius: '16px',
                     padding: '24px',
-                    boxShadow: '0 10px 40px rgba(0,0,0,0.2)'
+                    boxShadow: '0 10px 40px rgba(0,0,0,0.2)',
+                    height: 'calc(100vh - 120px)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflow: 'hidden'
                 }}>
-                    <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '20px', color: isDarkMode ? '#818CF8' : '#4F46E5' }}>
+                    <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '20px', color: isDarkMode ? '#818CF8' : '#4F46E5', flexShrink: 0 }}>
                         📚 Bài kiểm tra của tôi ({teacherExams.length})
                     </h2>
 
-                    <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
+                    <div style={{ flex: 1, overflowY: 'auto' }}>
                         {teacherExams.length === 0 ? (
                             <p style={{ textAlign: 'center', color: '#6B7280', padding: '40px 0' }}>
                                 Chưa có bài kiểm tra nào
@@ -1129,61 +1166,68 @@ export function TeacherPage() {
                                     position: 'relative'
                                 }}
                             >
-                                {/* Delete button - top right */}
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); deleteExam(exam.exam_id); }}
-                                    style={{
-                                        position: 'absolute',
-                                        top: '8px',
-                                        right: '8px',
-                                        padding: '4px 6px',
-                                        background: '#FEE2E2',
-                                        color: '#DC2626',
-                                        border: 'none',
-                                        borderRadius: '4px',
-                                        fontSize: '12px',
-                                        cursor: 'pointer',
-                                        lineHeight: 1
-                                    }}
-                                    title="Xóa bài kiểm tra"
-                                >
-                                    🗑️
-                                </button>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', paddingRight: '30px' }}>
-                                    <p style={{ fontWeight: '500', fontSize: '14px', margin: 0, color: isDarkMode ? 'white' : 'inherit' }}>
-                                        {exam.prompt.length > 40 ? exam.prompt.substring(0, 40) + '...' : exam.prompt}
-                                    </p>
+                                {/* Right side buttons - Copy (top) and Delete (bottom) */}
+                                <div style={{
+                                    position: 'absolute',
+                                    top: '8px',
+                                    right: '8px',
+                                    bottom: '8px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    justifyContent: 'space-between'
+                                }}>
                                     <button
                                         onClick={(e) => { e.stopPropagation(); copyExamLink(exam.exam_id, exam.student_url); }}
                                         style={{
-                                            padding: '4px 6px',
-                                            background: copiedExamId === exam.exam_id ? 'transparent' : '#E5E7EB',
-                                            border: 'none',
-                                            borderRadius: '4px',
+                                            padding: '6px 8px',
+                                            background: copiedExamId === exam.exam_id ? '#D1FAE5' : (isDarkMode ? '#4B5563' : '#F3F4F6'),
+                                            border: `1px solid ${copiedExamId === exam.exam_id ? '#10B981' : (isDarkMode ? '#6B7280' : '#D1D5DB')}`,
+                                            borderRadius: '6px',
                                             cursor: 'pointer',
                                             fontSize: '14px',
                                             lineHeight: 1,
-                                            color: copiedExamId === exam.exam_id ? '#10B981' : 'inherit'
+                                            color: copiedExamId === exam.exam_id ? '#10B981' : (isDarkMode ? '#D1D5DB' : '#374151')
                                         }}
                                         title={copiedExamId === exam.exam_id ? 'Đã copy!' : 'Copy link học sinh'}
                                     >
                                         {copiedExamId === exam.exam_id ? '✓' : '📋'}
                                     </button>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); deleteExam(exam.exam_id); }}
+                                        style={{
+                                            padding: '6px 8px',
+                                            background: isDarkMode ? '#4B5563' : '#F3F4F6',
+                                            border: `1px solid ${isDarkMode ? '#6B7280' : '#D1D5DB'}`,
+                                            borderRadius: '6px',
+                                            cursor: 'pointer',
+                                            fontSize: '14px',
+                                            lineHeight: 1,
+                                            color: isDarkMode ? '#D1D5DB' : '#374151'
+                                        }}
+                                        title="Xóa bài kiểm tra"
+                                    >
+                                        🗑️
+                                    </button>
                                 </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#6B7280', marginBottom: '10px' }}>
+                                <div style={{ marginBottom: '6px', paddingRight: '50px' }}>
+                                    <p style={{ fontWeight: '500', fontSize: '14px', margin: 0, color: isDarkMode ? 'white' : 'inherit' }}>
+                                        {exam.prompt.length > 40 ? exam.prompt.substring(0, 40) + '...' : exam.prompt}
+                                    </p>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#6B7280', marginBottom: '10px', paddingRight: '50px' }}>
                                     <span>{exam.question_count} câu</span>
                                     <span>{exam.student_count} học sinh</span>
                                 </div>
 
-                                {/* Action buttons */}
+                                {/* Action buttons - bottom left */}
                                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                                     <button
                                         onClick={() => loadExamFull(exam.exam_id)}
                                         style={{
                                             padding: '6px 10px',
-                                            background: viewMode === 'questions' && selectedExam === exam.exam_id ? '#4F46E5' : '#E5E7EB',
-                                            color: viewMode === 'questions' && selectedExam === exam.exam_id ? 'white' : '#374151',
-                                            border: 'none',
+                                            background: viewMode === 'questions' && selectedExam === exam.exam_id ? '#4F46E5' : (isDarkMode ? '#4B5563' : '#F3F4F6'),
+                                            color: viewMode === 'questions' && selectedExam === exam.exam_id ? 'white' : (isDarkMode ? '#D1D5DB' : '#374151'),
+                                            border: `1px solid ${viewMode === 'questions' && selectedExam === exam.exam_id ? '#4F46E5' : (isDarkMode ? '#6B7280' : '#D1D5DB')}`,
                                             borderRadius: '6px',
                                             fontSize: '11px',
                                             cursor: 'pointer'
@@ -1195,9 +1239,9 @@ export function TeacherPage() {
                                         onClick={() => loadStats(exam.exam_id)}
                                         style={{
                                             padding: '6px 10px',
-                                            background: viewMode === 'stats' && selectedExam === exam.exam_id ? '#059669' : '#E5E7EB',
-                                            color: viewMode === 'stats' && selectedExam === exam.exam_id ? 'white' : '#374151',
-                                            border: 'none',
+                                            background: viewMode === 'stats' && selectedExam === exam.exam_id ? '#059669' : (isDarkMode ? '#4B5563' : '#F3F4F6'),
+                                            color: viewMode === 'stats' && selectedExam === exam.exam_id ? 'white' : (isDarkMode ? '#D1D5DB' : '#374151'),
+                                            border: `1px solid ${viewMode === 'stats' && selectedExam === exam.exam_id ? '#059669' : (isDarkMode ? '#6B7280' : '#D1D5DB')}`,
                                             borderRadius: '6px',
                                             fontSize: '11px',
                                             cursor: 'pointer'
@@ -1209,9 +1253,9 @@ export function TeacherPage() {
                                         onClick={(e) => { e.stopPropagation(); exportExamToPDF(exam.exam_id, exam.prompt); }}
                                         style={{
                                             padding: '6px 10px',
-                                            background: '#E5E7EB',
-                                            color: '#374151',
-                                            border: 'none',
+                                            background: isDarkMode ? '#4B5563' : '#F3F4F6',
+                                            color: isDarkMode ? '#D1D5DB' : '#374151',
+                                            border: `1px solid ${isDarkMode ? '#6B7280' : '#D1D5DB'}`,
                                             borderRadius: '6px',
                                             fontSize: '11px',
                                             cursor: 'pointer'

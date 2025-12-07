@@ -17,26 +17,6 @@ class AudioSingleChoiceGenerator(BaseQuestionGenerator):
     """Generator for audio + single choice questions."""
     
     question_type = "audio_single_choice"
-    
-    def get_system_prompt(self) -> str:
-        return """Bạn là giáo viên chuyên tạo câu hỏi nghe hiểu Tiếng Anh (Audio Single Choice).
-        
-Tạo câu hỏi gồm:
-- audio_script: Danh sách các đoạn hội thoại (DialogueSegment). Mỗi đoạn gồm:
-  + voice: Chọn 1 trong [alloy, echo, fable, onyx, nova, shimmer].
-  + text: Lời thoại Tiếng Anh.
-- text: 1 câu hỏi về nội dung nghe (text)
-- options: 4 đáp án lựa chọn
-- correct_answer: vị trí 0-based
-- explanation: Giải thích chi tiết (Bằng Tiếng Việt)
-
-QUAN TRỌNG: 
-- Kịch bản audio (audio_script) phải tự nhiên.
-- Độ dài hội thoại NGẮN GỌN (khoảng 3-4 câu thoại).
-- Câu hỏi và đáp án nên là TIẾNG ANH.
-- Giải thích PHẢI là TIẾNG VIỆT.
-
-Sử dụng format strict JSON for GenAudioSingleChoiceQuestion."""
 
     def _shuffle_options(self, options: list, correct_answer: int) -> tuple:
         """Shuffle options and return new options list with updated correct_answer index."""

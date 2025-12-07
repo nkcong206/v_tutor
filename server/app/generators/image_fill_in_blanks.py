@@ -12,29 +12,6 @@ class ImageFillInBlanksGenerator(BaseQuestionGenerator):
     """Generator for image fill in the blanks questions."""
     
     question_type = "image_fill_in_blanks"
-    
-    def get_system_prompt(self) -> str:
-        return """Bạn là giáo viên chuyên tạo câu hỏi điền vào chỗ trống CÓ HÌNH ẢNH.
-
-Tạo câu hỏi gồm:
-- 1 Mô tả hình ảnh (image_prompt) bằng Tiếng Anh để tìm/tạo hình
-- 1 câu/đoạn văn (text) có các chỗ trống đánh dấu bằng ___ (liên quan đến hình)
-- Số lượng chỗ trống (blanks_count)
-- Danh sách đáp án đúng (correct_answers)
-- Giải thích chi tiết (explanation) - Bằng Tiếng Việt
-
-QUAN TRỌNG:
-- image_prompt: TIẾNG ANH.
-    - Yêu cầu phong cách: "simple educational clip art", "children book illustration", "vector style", "white background".
-    - Hình ảnh phải rõ ràng, đơn giản, tập trung vào chủ thể (giống flashcard).
-    - TUYỆT ĐỐI KHÔNG chứa text/chữ trong hình ảnh (No text, no words).
-    - Trong `image_prompt`, PHẢI bao gồm cụm từ: "no text, no words, no labels, isolated on white background".
-- Nội dung câu hỏi KHÔNG ĐƯỢC yêu cầu học sinh đọc chữ từ trong hình ảnh.
-- Nếu chủ đề là TIẾNG ANH: Nội dung đoạn văn/câu hỏi (text) và từ cần điền (correct_answers) viết bằng TIẾNG ANH. Giải thích (explanation) viết bằng TIẾNG VIỆT.
-- Nếu chủ đề khác: Viết toàn bộ (text, correct_answers, explanation) bằng TIẾNG VIỆT.
-- CHÚ Ý TUYỆT ĐỐI: Chỗ cần điền PHẢI là đúng 3 dấu gạch dưới '___'. KHÔNG dùng '____', '__' hay '[...]'. UI chỉ nhận diện đúng 3 dấu gạch dưới '___'.
-
-Sử dụng format strict JSON cho GenImageFillInBlanksQuestion."""
 
     async def generate(
         self,

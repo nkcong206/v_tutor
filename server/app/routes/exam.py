@@ -111,8 +111,10 @@ async def process_generated_question_async(exam_id: str, q_dict: dict, qt: str):
     """Helper to process, save, and broadcast a generated question."""
     if exam_id not in exams_db: return
 
-    # Prepare audio as base64 if needed
+    # Prepare audio as base64 if needed, but preserve original file path
     audio_url = q_dict.get("audio_url")
+    audio_file_path = audio_url  # Preserve original file path for PDF export
+    
     if audio_url and audio_url.startswith("audio/"):
         try:
             audio_path = os.path.join(settings.upload_dir, audio_url)
@@ -134,6 +136,7 @@ async def process_generated_question_async(exam_id: str, q_dict: dict, qt: str):
         "image_base64": q_dict.get("image_base64"),
         "image_base64": q_dict.get("image_base64"),
         "audio_url": audio_url,
+        "audio_file_path": audio_file_path,  # Original file path for PDF export
         "audio_src": q_dict.get("audio_url"),
         "blanks": q_dict.get("blanks"), 
         "correct_answers": q_dict.get("correct_answers"),

@@ -12,28 +12,6 @@ class ImageMultiChoiceGenerator(BaseQuestionGenerator):
     """Generator for image multiple choice questions."""
     
     question_type = "image_multi_choice"
-    
-    def get_system_prompt(self) -> str:
-        return """Bạn là giáo viên chuyên tạo câu hỏi trắc nghiệm CÓ HÌNH ẢNH.
-
-Tạo câu hỏi trắc nghiệm gồm:
-- 1 Mô tả hình ảnh (image_prompt) bằng Tiếng Anh để tìm/tạo hình
-- 1 câu hỏi liên quan đến hình ảnh
-- 4 đáp án (có thể chọn nhiều đáp án đúng)
-- correct_answers: danh sách index (0-based) các đáp án đúng
-- Giải thích chi tiết
-
-QUAN TRỌNG:
-- image_prompt: TIẾNG ANH.
-    - Yêu cầu phong cách: "simple educational clip art", "children book illustration", "vector style", "white background".
-    - Hình ảnh phải rõ ràng, đơn giản, tập trung vào chủ thể (giống flashcard).
-    - TUYỆT ĐỐI KHÔNG chứa text/chữ trong hình ảnh (No text, no words).
-    - Trong `image_prompt`, PHẢI bao gồm cụm từ: "no text, no words, no labels, isolated on white background".
-- Nội dung câu hỏi KHÔNG ĐƯỢC yêu cầu học sinh đọc chữ từ trong hình ảnh.
-- Nếu chủ đề là TIẾNG ANH: Nội dung câu hỏi (text) và đáp án (options) viết bằng TIẾNG ANH. Giải thích (explanation) viết bằng TIẾNG VIỆT.
-- Nếu chủ đề khác: Viết toàn bộ (text, options, explanation) bằng TIẾNG VIỆT.
-
-Sử dụng format strict JSON cho GenImageMultiChoiceQuestion."""
 
     async def generate(
         self,

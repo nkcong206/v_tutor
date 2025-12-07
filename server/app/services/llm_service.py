@@ -61,19 +61,9 @@ class StructuredLLMService:
                 for m in chat_history if m.get("content")
             ]
             
-            system_prompt = """
-            Bạn là một giáo viên tận tâm. Nhiệm vụ của bạn là đánh giá quá trình làm bài của học sinh.
-            
-            Tiêu chí đánh giá (Thang điểm 10):
-            - Kết quả làm bài (đúng/sai).
-            - Cách tương tác với AI Tutor (có tích cực hỏi không, hay chỉ đoán mò).
-            - Nếu chọn sai, học sinh có cố gắng hiểu lý do không?
-            - Tốc độ và thái độ học tập.
-            
-            Output:
-            1. summary: Nhận xét ngắn gọn (3-4 câu) về điểm mạnh, điểm yếu và lời khuyên.
-            2. score: Điểm số (integer 0-10) phản ánh thái độ và hiệu quả học tập (không chỉ là điểm bài thi).
-            """
+            # Get prompt from YAML
+            from app.services.prompt_management import get_system_prompt
+            system_prompt = get_system_prompt("performance_analysis")
             
             user_prompt = f"""
             Học sinh: {student_name}

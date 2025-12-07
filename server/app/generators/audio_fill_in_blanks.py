@@ -13,28 +13,6 @@ class AudioFillInBlanksGenerator(BaseQuestionGenerator):
     """Generator for audio fill in the blanks questions."""
     
     question_type = "audio_fill_in_blanks"
-    
-    def get_system_prompt(self) -> str:
-        return """Bạn là giáo viên chuyên tạo câu hỏi luyện nghe điền từ (Audio Fill in Blanks) Tiếng Anh.
-
-Tạo câu hỏi gồm:
-- audio_script: Danh sách các đoạn hội thoại (DialogueSegment). Mỗi đoạn gồm:
-  + voice: Chọn 1 trong [alloy, echo, fable, onyx, nova, shimmer].
-  + text: Lời thoại Tiếng Anh.
-- text: 1 câu/đoạn văn (text) có các chỗ trống. BẮT BUỘC dùng đúng 3 dấu gạch dưới '___'.
-- blanks_count: Số lượng chỗ trống
-- correct_answers: Danh sách đáp án đúng
-- explanation: Giải thích chi tiết (Bằng Tiếng Việt)
-
-QUAN TRỌNG:
-- CHÚ Ý TUYỆT ĐỐI về chỗ trống: PHẢI là đúng 3 dấu gạch dưới '___'. KHÔNG dùng '____', '__' hay '[...]'. UI chỉ nhận diện đúng 3 dấu gạch dưới '___'.
-- Kịch bản audio (audio_script) nên là hội thoại tự nhiên hoặc đoạn văn đọc rõ ràng.
-- Độ dài NGẮN GỌN (khoảng 3-4 câu hoặc 30-50 từ).
-- text (với blank): TIẾNG ANH.
-- correct_answers: TIẾNG ANH.
-- explanation: TIẾNG VIỆT.
-
-Sử dụng format strict JSON cho GenAudioFillInBlanksQuestion."""
 
     async def generate(
         self,

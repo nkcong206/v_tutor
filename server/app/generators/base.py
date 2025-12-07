@@ -8,6 +8,7 @@ from typing import List, Optional, Dict, Any, Type
 from openai import OpenAI
 from app.config import settings
 from app.generators.schemas import AnyQuestion
+from app.services.prompt_management import get_system_prompt as get_prompt_from_yaml
 
 
 class BaseQuestionGenerator(ABC):
@@ -41,10 +42,9 @@ class BaseQuestionGenerator(ABC):
         """
         pass
     
-    @abstractmethod
     def get_system_prompt(self) -> str:
-        """Get the system prompt for this question type."""
-        pass
+        """Get the system prompt for this question type from YAML file."""
+        return get_prompt_from_yaml(self.question_type)
     
     async def _generate_structured(
         self,

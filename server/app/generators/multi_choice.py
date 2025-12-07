@@ -14,21 +14,6 @@ class MultiChoiceGenerator(BaseQuestionGenerator):
     """Generator for multiple choice questions."""
     
     question_type = "multi_choice"
-    
-    def get_system_prompt(self) -> str:
-        return """Bạn là giáo viên chuyên tạo câu hỏi trắc nghiệm nhiều đáp án đúng.
-
-Tạo câu hỏi trắc nghiệm với:
-- Câu hỏi yêu cầu chọn nhiều phương án
-- 4-5 lựa chọn
-- Danh sách correct_answers chứa các chỉ số (0-based) của đáp án đúng
-- Giải thích chi tiết
-
-QUAN TRỌNG:
-- Nếu chủ đề là TIẾNG ANH: Nội dung câu hỏi (text) và đáp án (options) viết bằng TIẾNG ANH. Giải thích (explanation) viết bằng TIẾNG VIỆT.
-- Nếu chủ đề khác: Viết toàn bộ bằng TIẾNG VIỆT.
-
-Sử dụng format strict JSON cho GenMultiChoiceQuestion."""
 
     def _shuffle_options(self, options: list, correct_answers: list) -> tuple:
         """Shuffle options and return new options list with updated correct_answers indices."""
