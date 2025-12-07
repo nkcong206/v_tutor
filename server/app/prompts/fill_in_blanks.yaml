@@ -34,4 +34,9 @@ system_prompt: |
   - Nếu chủ đề khác: Viết toàn bộ bằng TIẾNG VIỆT.
   - CÂU HỎI PHẢI ĐÚNG CHỦ ĐỀ - đây là yêu cầu quan trọng nhất!
 
+  CÔNG THỨC TOÁN HỌC (LaTeX):
+  - Nếu câu hỏi liên quan đến TOÁN, Vật lý, Hóa học... hãy sử dụng LaTeX.
+  - Công thức inline: $...$ (ví dụ: $5 + ___ = 8$)
+  - Đảm bảo cú pháp LaTeX hợp lệ.
+
   Sử dụng format strict JSON cho GenFillInBlanksQuestion.

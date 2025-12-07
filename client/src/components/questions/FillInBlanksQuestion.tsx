@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { Question } from '../../types';
 import { QuestionMedia } from './QuestionMedia';
+import { LatexText } from '../LatexText';
 
 interface FillInBlanksProps {
     question: Question;
@@ -87,7 +88,7 @@ export const FillInBlanksQuestion: React.FC<FillInBlanksProps> = ({
             <div style={{ lineHeight: '2.5', fontSize: '15px', color: isDarkMode ? '#F3F4F6' : '#111827' }}>
                 {parts.map((part, idx) => (
                     <React.Fragment key={idx}>
-                        <span>{part}</span>
+                        <span><LatexText>{part}</LatexText></span>
                         {idx < parts.length - 1 && (
                             <span style={{ position: 'relative', display: 'inline-block', margin: '0 8px' }}>
                                 <input
@@ -179,7 +180,7 @@ export const FillInBlanksQuestion: React.FC<FillInBlanksProps> = ({
                                 color: isDarkMode ? '#D1D5DB' : '#4B5563',
                             }}>
                                 {viewMode === 'teacher' && <span style={{ marginRight: '4px' }}>{idx + 1}.</span>}
-                                {word}
+                                <LatexText>{word}</LatexText>
                             </div>
                         ))}
                     </div>

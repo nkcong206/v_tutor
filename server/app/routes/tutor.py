@@ -112,6 +112,20 @@ async def tutor_chat(request: TutorChatRequest):
     try:
         start_time = time.time()
         
+        # === DEBUG LOGS ===
+        print("\n" + "="*60)
+        print("[AI Tutor Server] === NEW CHAT REQUEST ===")
+        print(f"[AI Tutor Server] Exam ID: {request.exam_id}")
+        print(f"[AI Tutor Server] Question ID: {request.question_id}")
+        print(f"[AI Tutor Server] Student: {request.student_name}")
+        print(f"[AI Tutor Server] Message: {request.message[:100]}...")
+        print(f"[AI Tutor Server] Selected Answer: {request.selected_answer}")
+        print(f"[AI Tutor Server] Correct Answer: {request.correct_answer}")
+        print(f"[AI Tutor Server] Is Correct: {request.is_correct}")
+        print(f"[AI Tutor Server] Attempt Count: {request.attempt_count}")
+        print("="*60 + "\n")
+        # === END DEBUG LOGS ===
+        
         # Create chat key
         chat_key = f"{request.exam_id}_{request.student_name}"
         

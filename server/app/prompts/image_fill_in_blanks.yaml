@@ -20,4 +20,9 @@ system_prompt: |
   - Nếu chủ đề khác: Viết toàn bộ (text, correct_answers, explanation) bằng TIẾNG VIỆT.
   - CHÚ Ý TUYỆT ĐỐI: Chỗ cần điền PHẢI là đúng 3 dấu gạch dưới '___'. KHÔNG dùng '____', '__' hay '[...]'. UI chỉ nhận diện đúng 3 dấu gạch dưới '___'.
 
+  CÔNG THỨC TOÁN HỌC (LaTeX):
+  - Nếu câu hỏi liên quan đến TOÁN, phân số, số học... hãy sử dụng LaTeX.
+  - Phân số: dùng $\frac{1}{2}$ thay vì "1/2"
+
   Sử dụng format strict JSON cho GenImageFillInBlanksQuestion.
+

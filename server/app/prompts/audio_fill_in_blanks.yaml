@@ -19,4 +19,9 @@ system_prompt: |
   - correct_answers: TIẾNG ANH.
   - explanation: TIẾNG VIỆT.
 
+  CÔNG THỨC TOÁN HỌC (LaTeX):
+  - Nếu câu hỏi liên quan đến TOÁN, phân số, số học... hãy sử dụng LaTeX.
+  - Phân số: dùng $\frac{1}{2}$ thay vì "1/2"
+
   Sử dụng format strict JSON cho GenAudioFillInBlanksQuestion.
+

@@ -14,4 +14,11 @@ system_prompt: |
   QUAN TRỌNG:
   - Hãy tạo kịch bản hội thoại tự nhiên giữa 2 người trở lên.
   - Độ dài hội thoại NGẮN GỌN (khoảng 3-4 câu thoại).
-  - Sử dụng format strict JSON cho GenAudioMultiChoiceQuestion.
+
+  CÔNG THỨC TOÁN HỌC (LaTeX):
+  - Nếu câu hỏi liên quan đến TOÁN, phân số, số học... hãy sử dụng LaTeX.
+  - Phân số: dùng $\frac{1}{2}$ thay vì "1/2"
+  - Công thức inline: $...$ (ví dụ: $\frac{3}{4}$, $x^2$)
+
+  Sử dụng format strict JSON cho GenAudioMultiChoiceQuestion.
+

@@ -58,10 +58,31 @@ export function UIPreviewPage() {
         audio_url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3'
     };
 
+    // 4. Math Questions (LaTeX)
+    const qMathSingle: Question = {
+        id: 10, type: 'single_choice',
+        text: 'Giải phương trình: $x^2 - 4 = 0$. Tìm $x$?',
+        options: ['$x = 2$', '$x = -2$', '$x = \\pm 2$', '$x = 4$'],
+        correct_answer: 2
+    };
+    const qMathMulti: Question = {
+        id: 11, type: 'multi_choice',
+        text: 'Chọn tất cả các biểu thức tương đương với $\\frac{a^2 - b^2}{a - b}$ (với $a \\neq b$):',
+        options: ['$a + b$', '$a - b$', '$(a+b)(a-b)$', '$\\frac{(a-b)(a+b)}{a-b}$'],
+        correct_answers: [0, 3]
+    };
+    const qMathFill: Question = {
+        id: 12, type: 'fill_in_blanks',
+        text: 'Tính: $2^3 = $ ___ và $\\sqrt{16} = $ ___',
+        options: [],
+        correct_answers: ['8', '4'] as any
+    };
+
     const allQuestions = [
         qSingleNone, qSingleImage, qSingleAudio,
         qMultiNone, qMultiImage, qMultiAudio,
-        qFillNone, qFillImage, qFillAudio
+        qFillNone, qFillImage, qFillAudio,
+        qMathSingle, qMathMulti, qMathFill
     ];
 
     const [answers, setAnswers] = useState<Record<number, any>>({});
@@ -70,7 +91,7 @@ export function UIPreviewPage() {
         <div style={{ padding: '20px', background: isDarkMode ? '#111827' : '#F3F4F6', minHeight: '100vh', color: isDarkMode ? 'white' : 'black' }}>
             <div style={{ maxWidth: '800px', margin: '0 auto' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
-                    <h1>UI Preview (9 Types)</h1>
+                    <h1>UI Preview (12 Types - including Math/LaTeX)</h1>
 
                     <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                         {/* View Mode Toggle */}

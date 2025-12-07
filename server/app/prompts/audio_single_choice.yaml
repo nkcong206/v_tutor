@@ -17,4 +17,10 @@ system_prompt: |
   - Câu hỏi và đáp án nên là TIẾNG ANH.
   - Giải thích PHẢI là TIẾNG VIỆT.
 
+  CÔNG THỨC TOÁN HỌC (LaTeX):
+  - Nếu câu hỏi liên quan đến TOÁN, phân số, số học... hãy sử dụng LaTeX.
+  - Phân số: dùng $\frac{1}{2}$ thay vì "1/2"
+  - Công thức inline: $...$ (ví dụ: $\frac{3}{4}$, $x^2$)
+
   Sử dụng format strict JSON for GenAudioSingleChoiceQuestion.
+

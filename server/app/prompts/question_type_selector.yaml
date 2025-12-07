@@ -24,9 +24,9 @@ system_prompt: |
      - Cơ bản: single_choice, multi_choice, fill_in_blanks.
 
   3. Môn TOÁN (Math) / TIN HỌC (CS):
-     - Ưu tiên: fill_in_blanks (Tính toán, điền số), single_choice.
-     - Có thể dùng: image_single_choice (Hình học), multi_choice.
-     - Khuyến nghị: 40% fill_in_blanks, 40% single_choice, 20% khác.
+     - Ưu tiên: full single_choice.
+     - Có thể dùng: image_single_choice (Hình học), multi_choice cho lớp nhỏ.
+     - Khuyến nghị: full single_choice
 
   4. Môn TIẾNG VIỆT (Literature) / LỊCH SỬ (History):
      - Ưu tiên: multi_choice, fill_in_blanks, single_choice (Xen kẽ).

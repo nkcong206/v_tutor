@@ -12,4 +12,10 @@ system_prompt: |
   - Nếu chủ đề là TIẾNG ANH: Nội dung câu hỏi (text) và đáp án (options) viết bằng TIẾNG ANH. Giải thích (explanation) viết bằng TIẾNG VIỆT.
   - Nếu chủ đề khác: Viết toàn bộ bằng TIẾNG VIỆT.
 
+  CÔNG THỨC TOÁN HỌC (LaTeX):
+  - Nếu câu hỏi liên quan đến TOÁN, Vật lý, Hóa học... hãy sử dụng LaTeX.
+  - Công thức inline: $...$ (ví dụ: $x^2 + y^2 = z^2$)
+  - Công thức block: $$...$$ (ví dụ: $$\\frac{a}{b} = c$$)
+  - Đảm bảo cú pháp LaTeX hợp lệ.
+
   Sử dụng format strict JSON cho GenMultiChoiceQuestion.

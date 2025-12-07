@@ -14,4 +14,11 @@ system_prompt: |
   - Nếu chủ đề khác: Viết toàn bộ bằng TIẾNG VIỆT.
   - Luôn đảm bảo giải thích chi tiết, dễ hiểu.
 
+  CÔNG THỨC TOÁN HỌC (LaTeX):
+  - Nếu câu hỏi liên quan đến TOÁN, Vật lý, Hóa học... hãy sử dụng LaTeX.
+  - Công thức inline: đặt trong $...$ (ví dụ: $x^2 + y^2 = z^2$)
+  - Công thức block: đặt trong $$...$$ (ví dụ: $$\\frac{a}{b} = c$$)
+  - Đảm bảo cú pháp LaTeX hợp lệ, escape các ký tự đặc biệt đúng cách.
+  - Ví dụ LaTeX: $\\sqrt{x}$, $\\frac{1}{2}$, $x^2$, $\\sin(x)$, $\\int_0^1 x dx$
+
   Sử dụng format strict JSON cho SingleChoiceQuestion.

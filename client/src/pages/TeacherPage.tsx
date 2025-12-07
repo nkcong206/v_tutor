@@ -283,9 +283,9 @@ export function TeacherPage() {
         if (['pdf'].includes(ext)) return { icon: '📄', color: '#EF4444', label: 'PDF' };
         if (['doc', 'docx'].includes(ext)) return { icon: '📝', color: '#2563EB', label: 'DOC' };
         if (['ppt', 'pptx'].includes(ext)) return { icon: '📊', color: '#D97706', label: 'PPT' };
-        if (['xls', 'xlsx'].includes(ext)) return { icon: '📉', color: '#059669', label: 'XLS' };
+        if (['xls', 'xlsx'].includes(ext)) return { icon: '📉', color: '#10B981', label: 'XLS' };
         if (['jpg', 'jpeg', 'png', 'gif'].includes(ext)) return { icon: '🖼️', color: '#9333EA', label: 'IMG' };
-        if (['py', 'js', 'html', 'css'].includes(ext)) return { icon: '💻', color: '#4B5563', label: 'CODE' };
+        if (['py', 'js', 'html', 'css'].includes(ext)) return { icon: '💻', color: '#2D3250', label: 'CODE' };
         return { icon: '📁', color: '#6B7280', label: ext.toUpperCase() };
     };
 
@@ -517,10 +517,26 @@ export function TeacherPage() {
             const formatCorrectAnswer = (q: any): string => {
                 const qType = q.type || 'single_choice';
 
+                // Helper to wrap LaTeX expressions with $
+                const wrapLatex = (text: string): string => {
+                    if (!text) return text;
+                    // If already has $ delimiter, return as-is
+                    if (text.includes('$')) return text;
+                    // If contains LaTeX commands, wrap with $
+                    if (text.includes('\\frac') || text.includes('\\sqrt') ||
+                        text.includes('\\sum') || text.includes('\\int') ||
+                        text.includes('\\left') || text.includes('\\right') ||
+                        (text.includes('^') && /\^[\d{]/.test(text)) ||
+                        (text.includes('_') && /_[\d{]/.test(text))) {
+                        return `$${text}$`;
+                    }
+                    return text;
+                };
+
                 if (qType === 'fill_in_blanks') {
-                    // Show words to fill
+                    // Show words to fill - wrap each answer with LaTeX if needed
                     const answers = q.correct_answers || [];
-                    return answers.map((a: string, i: number) => `(${i + 1}) ${a}`).join(', ');
+                    return answers.map((a: string, i: number) => `(${i + 1}) ${wrapLatex(a)}`).join(', ');
                 } else if (qType === 'multi_choice') {
                     // Show all correct answer letters
                     const correctIdxs = q.correct_answers || [];
@@ -541,14 +557,32 @@ export function TeacherPage() {
                 const qType = q.type || 'single_choice';
                 const questionText = q.question || q.text || '';
 
+                // Helper to wrap LaTeX expressions with $ if they contain LaTeX commands but lack delimiters
+                const ensureLatexDelimiters = (text: string): string => {
+                    // If already has $ delimiter, return as-is
+                    if (text.includes('$')) return text;
+                    // If contains LaTeX commands like \frac, \sqrt, etc., wrap with $
+                    if (text.includes('\\frac') || text.includes('\\sqrt') ||
+                        text.includes('\\sum') || text.includes('\\int') ||
+                        text.includes('\\left') || text.includes('\\right') ||
+                        text.includes('^') || text.includes('_')) {
+                        return `$${text}$`;
+                    }
+                    return text;
+                };
+
                 if (qType === 'fill_in_blanks') {
                     // Check if answers are numeric (math) or text (language)
                     const words = q.correct_answers || [];
-                    // If all answers are numbers, don't show word bank (math questions)
-                    const isNumeric = words.every((w: string) => !isNaN(Number(w)) || /^[\d\s+\-*/=<>]+$/.test(w));
+                    // If answers contain LaTeX commands, it's a math question
+                    const hasLatex = words.some((w: string) =>
+                        w.includes('\\frac') || w.includes('\\sqrt') || w.includes('^')
+                    );
+                    // If all answers are simple numbers
+                    const isSimpleNumeric = words.every((w: string) => !isNaN(Number(w)));
 
-                    if (isNumeric) {
-                        // Math fill-in-blanks - no word bank
+                    if (isSimpleNumeric || hasLatex) {
+                        // Math fill-in-blanks - no word bank (don't give away the answer)
                         return `
                             <div class="question">
                                 <div class="question-header">Câu ${idx + 1} (Điền số):</div>
@@ -558,7 +592,9 @@ export function TeacherPage() {
                     } else {
                         // Language fill-in-blanks - show word bank
                         const shuffledWords = [...words].sort(() => Math.random() - 0.5);
-                        const wordBank = shuffledWords.join(' | ');
+                        // Ensure each word has proper LaTeX delimiters if needed
+                        const formattedWords = shuffledWords.map(w => ensureLatexDelimiters(w));
+                        const wordBank = formattedWords.join(' | ');
 
                         return `
                             <div class="question">
@@ -641,6 +677,8 @@ export function TeacherPage() {
                 <html>
                 <head>
                     <meta charset="UTF-8">
+                    <!-- KaTeX CSS for math rendering -->
+                    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
                     <style>
                         body { font-family: Arial, sans-serif; padding: 40px; line-height: 1.6; }
                         h1 { font-size: 24px; margin-bottom: 10px; color: #1a1a1a; }
@@ -660,8 +698,12 @@ export function TeacherPage() {
                         .answer-key { margin-top: 40px; border-top: 2px solid #333; padding-top: 20px; }
                         .answer-key h2 { font-size: 18px; margin-bottom: 15px; }
                         .answer-row { margin-bottom: 8px; }
-                        .answer-row strong { color: #059669; }
+                        .answer-row strong { color: #10B981; }
                     </style>
+                    <!-- KaTeX JS for math rendering -->
+                    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+                    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+                        onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
                 </head>
                 <body>
                     <h1>Bài kiểm tra</h1>
@@ -705,8 +747,8 @@ export function TeacherPage() {
                 position: 'fixed',
                 top: '20px',
                 right: '20px',
-                background: isDarkMode ? '#374151' : 'white',
-                border: isDarkMode ? '1px solid #4B5563' : '1px solid #E5E7EB',
+                background: isDarkMode ? '#1E2447' : 'white',
+                border: isDarkMode ? '1px solid #2D3250' : '1px solid #E5E7EB',
                 borderRadius: '50%',
                 width: '40px',
                 height: '40px',
@@ -729,63 +771,134 @@ export function TeacherPage() {
         return (
             <div style={{
                 minHeight: '100vh',
-                background: isDarkMode ? 'linear-gradient(135deg, #111827 0%, #1F2937 100%)' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                background: isDarkMode
+                    ? 'linear-gradient(135deg, #0A0F1C 0%, #131629 50%, #1E2447 100%)'
+                    : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                padding: '20px'
+                padding: '20px',
+                position: 'relative',
+                overflow: 'hidden'
             }}>
+                {/* Decorative glow orbs */}
+                <div style={{
+                    position: 'absolute',
+                    width: '500px',
+                    height: '500px',
+                    background: 'radial-gradient(circle, rgba(124, 58, 237, 0.12) 0%, transparent 70%)',
+                    top: '-150px',
+                    left: '-150px',
+                    borderRadius: '50%',
+                    pointerEvents: 'none'
+                }} />
+                <div style={{
+                    position: 'absolute',
+                    width: '400px',
+                    height: '400px',
+                    background: 'radial-gradient(circle, rgba(168, 85, 247, 0.1) 0%, transparent 70%)',
+                    bottom: '-100px',
+                    right: '-100px',
+                    borderRadius: '50%',
+                    pointerEvents: 'none'
+                }} />
+
                 <ThemeToggle />
                 <div style={{
-                    background: isDarkMode ? '#1F2937' : 'white',
-                    borderRadius: '20px',
-                    padding: '40px',
-                    maxWidth: '400px',
+                    background: isDarkMode
+                        ? 'rgba(30, 36, 71, 0.8)'
+                        : 'rgba(255, 255, 255, 0.95)',
+                    backdropFilter: 'blur(20px)',
+                    borderRadius: '24px',
+                    padding: '48px 40px',
+                    maxWidth: '420px',
                     width: '100%',
-                    boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+                    boxShadow: isDarkMode
+                        ? '0 25px 80px rgba(0,0,0,0.5), 0 0 40px rgba(124, 58, 237, 0.1)'
+                        : '0 25px 80px rgba(0,0,0,0.15)',
                     textAlign: 'center',
-                    color: isDarkMode ? 'white' : 'inherit'
+                    color: isDarkMode ? 'white' : 'inherit',
+                    border: isDarkMode ? '1px solid rgba(124, 58, 237, 0.2)' : 'none'
                 }}>
-                    <h1 style={{ fontSize: '32px', marginBottom: '8px' }}>🎓</h1>
-                    <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: isDarkMode ? 'white' : '#1F2937', marginBottom: '24px' }}>
+                    {/* Animated icon */}
+                    <div style={{
+                        fontSize: '56px',
+                        marginBottom: '16px',
+                        display: 'inline-block'
+                    }}>
+                        <span style={{
+                            display: 'inline-block',
+                            animation: 'bounce 2s ease-in-out infinite'
+                        }}>👨‍🏫</span>
+                    </div>
+                    <style>{`
+                        @keyframes bounce {
+                            0%, 100% { transform: translateY(0); }
+                            50% { transform: translateY(-8px); }
+                        }
+                        @keyframes glow {
+                            0%, 100% { box-shadow: 0 0 20px rgba(124, 58, 237, 0.3); }
+                            50% { box-shadow: 0 0 35px rgba(124, 58, 237, 0.5); }
+                        }
+                    `}</style>
+                    <h2 style={{
+                        fontSize: '28px',
+                        fontWeight: '700',
+                        marginBottom: '8px',
+                        color: isDarkMode ? '#A855F7' : '#7C3AED'
+                    }}>
                         V-Tutor - Giáo viên
                     </h2>
+                    <p style={{ color: isDarkMode ? '#9CA3AF' : '#6B7280', marginBottom: '32px', fontSize: '15px' }}>
+                        Tạo bài kiểm tra thông minh với AI
+                    </p>
 
-                    <div style={{ marginBottom: '20px' }}>
-                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', color: isDarkMode ? '#D1D5DB' : '#374151' }}>
-                            Nhập tên của bạn để bắt đầu:
-                        </label>
+                    <div style={{ marginBottom: '24px' }}>
                         <input
-                            placeholder="VD: Nguyễn Văn A"
+                            placeholder="Nhập tên của bạn..."
                             value={teacherName}
                             onChange={(e) => setTeacherName(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
                             style={{
                                 width: '100%',
-                                padding: '14px',
-                                borderRadius: '10px',
-                                border: isDarkMode ? '2px solid #374151' : '2px solid #E5E7EB',
+                                padding: '16px 20px',
+                                borderRadius: '14px',
+                                border: isDarkMode
+                                    ? '2px solid rgba(124, 58, 237, 0.3)'
+                                    : '2px solid #E5E7EB',
                                 fontSize: '16px',
                                 textAlign: 'center',
                                 boxSizing: 'border-box',
-                                background: isDarkMode ? '#374151' : 'white',
-                                color: isDarkMode ? 'white' : 'inherit'
+                                background: isDarkMode ? 'rgba(19, 22, 41, 0.8)' : 'white',
+                                color: isDarkMode ? 'white' : 'inherit',
+                                outline: 'none',
+                                transition: 'all 0.3s ease'
+                            }}
+                            onFocus={(e) => {
+                                e.target.style.borderColor = '#7C3AED';
+                                e.target.style.boxShadow = '0 0 20px rgba(124, 58, 237, 0.2)';
+                            }}
+                            onBlur={(e) => {
+                                e.target.style.borderColor = isDarkMode ? 'rgba(124, 58, 237, 0.3)' : '#E5E7EB';
+                                e.target.style.boxShadow = 'none';
                             }}
                         />
-                        <p style={{ fontSize: '12px', color: isDarkMode ? '#9CA3AF' : '#6B7280', marginTop: '8px' }}>
-                            Bạn sẽ nhận được link riêng để quản lý sau khi tạo bài đầu tiên
+                        <p style={{ fontSize: '12px', color: isDarkMode ? '#6B7280' : '#9CA3AF', marginTop: '10px' }}>
+                            💡 Bạn sẽ nhận được link riêng để quản lý bài kiểm tra
                         </p>
                     </div>
 
                     {loginError && (
                         <div style={{
-                            padding: '12px',
-                            background: '#FEE2E2',
-                            borderRadius: '8px',
-                            color: '#DC2626',
-                            marginBottom: '16px'
+                            padding: '14px',
+                            background: isDarkMode ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2',
+                            borderRadius: '12px',
+                            color: '#EF4444',
+                            marginBottom: '20px',
+                            fontSize: '14px',
+                            border: '1px solid rgba(239, 68, 68, 0.2)'
                         }}>
-                            {loginError}
+                            ⚠️ {loginError}
                         </div>
                     )}
 
@@ -794,17 +907,35 @@ export function TeacherPage() {
                         disabled={!teacherName.trim()}
                         style={{
                             width: '100%',
-                            padding: '14px',
-                            background: teacherName.trim() ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : '#D1D5DB',
+                            padding: '16px',
+                            background: teacherName.trim()
+                                ? 'linear-gradient(135deg, #7C3AED 0%, #A855F7 100%)'
+                                : (isDarkMode ? '#2D3250' : '#D1D5DB'),
                             color: 'white',
                             border: 'none',
-                            borderRadius: '10px',
-                            fontSize: '16px',
-                            fontWeight: 'bold',
-                            cursor: teacherName.trim() ? 'pointer' : 'not-allowed'
+                            borderRadius: '14px',
+                            fontSize: '17px',
+                            fontWeight: '600',
+                            cursor: teacherName.trim() ? 'pointer' : 'not-allowed',
+                            transition: 'all 0.3s ease',
+                            boxShadow: teacherName.trim()
+                                ? '0 10px 30px rgba(124, 58, 237, 0.3)'
+                                : 'none'
+                        }}
+                        onMouseEnter={(e) => {
+                            if (teacherName.trim()) {
+                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                e.currentTarget.style.boxShadow = '0 15px 40px rgba(124, 58, 237, 0.4)';
+                            }
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = 'translateY(0)';
+                            if (teacherName.trim()) {
+                                e.currentTarget.style.boxShadow = '0 10px 30px rgba(124, 58, 237, 0.3)';
+                            }
                         }}
                     >
-                        Bắt đầu tạo bài →
+                        🚀 Bắt đầu tạo bài
                     </button>
                 </div>
             </div>
@@ -815,7 +946,7 @@ export function TeacherPage() {
     return (
         <div style={{
             minHeight: '100vh',
-            background: isDarkMode ? 'linear-gradient(135deg, #111827 0%, #1F2937 100%)' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            background: isDarkMode ? 'linear-gradient(135deg, #0A0F1C 0%, #131629 100%)' : 'linear-gradient(135deg, #7C3AED 0%, #A855F7 100%)',
             padding: '20px',
             color: isDarkMode ? 'white' : 'inherit'
         }}>
@@ -873,12 +1004,12 @@ export function TeacherPage() {
             <div style={{ maxWidth: '1600px', margin: '0 auto', display: 'grid', gridTemplateColumns: '1fr 1fr 1.5fr', gap: '20px' }}>
                 {/* Column 1: Create Exam */}
                 <div style={{
-                    background: isDarkMode ? '#1F2937' : 'white',
+                    background: isDarkMode ? '#131629' : 'white',
                     borderRadius: '16px',
                     padding: '24px',
                     boxShadow: '0 10px 40px rgba(0,0,0,0.2)'
                 }}>
-                    <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '20px', color: isDarkMode ? '#818CF8' : '#4F46E5' }}>
+                    <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '20px', color: isDarkMode ? '#818CF8' : '#7C3AED' }}>
                         ✨ Tạo bài kiểm tra mới
                     </h2>
 
@@ -903,11 +1034,11 @@ export function TeacherPage() {
                                 minHeight: '100px',
                                 padding: '12px',
                                 borderRadius: '8px',
-                                border: isDarkMode ? '2px solid #374151' : '2px solid #E5E7EB',
+                                border: isDarkMode ? '2px solid #1E2447' : '2px solid #E5E7EB',
                                 fontSize: '14px',
                                 resize: 'vertical',
                                 boxSizing: 'border-box',
-                                background: isDarkMode ? '#374151' : 'white',
+                                background: isDarkMode ? '#1E2447' : 'white',
                                 color: isDarkMode ? 'white' : 'inherit'
                             }}
                         />
@@ -926,11 +1057,11 @@ export function TeacherPage() {
                             onDrop={onDrop}
                             onClick={() => document.getElementById('file-upload')?.click()}
                             style={{
-                                border: `2px dashed ${isDragging ? '#4F46E5' : (isDarkMode ? '#4B5563' : '#D1D5DB')}`,
+                                border: `2px dashed ${isDragging ? '#7C3AED' : (isDarkMode ? '#2D3250' : '#D1D5DB')}`,
                                 borderRadius: '12px',
                                 padding: '20px',
                                 textAlign: 'center',
-                                background: isDragging ? (isDarkMode ? '#374151' : '#EEF2FF') : (isDarkMode ? '#111827' : '#F9FAFB'),
+                                background: isDragging ? (isDarkMode ? '#1E2447' : '#EEF2FF') : (isDarkMode ? '#0A0F1C' : '#F9FAFB'),
                                 cursor: 'pointer',
                                 transition: 'all 0.2s',
                                 marginBottom: '12px'
@@ -944,14 +1075,14 @@ export function TeacherPage() {
                                 style={{ display: 'none' }}
                             />
                             <p style={{ fontSize: '24px', marginBottom: '8px' }}>☁️</p>
-                            <p style={{ fontSize: '13px', color: isDarkMode ? '#D1D5DB' : '#4B5563', marginBottom: '4px' }}>
-                                Kéo thả file hoặc <span style={{ color: '#4F46E5', fontWeight: 'bold' }}>click để chọn</span>
+                            <p style={{ fontSize: '13px', color: isDarkMode ? '#D1D5DB' : '#2D3250', marginBottom: '4px' }}>
+                                Kéo thả file hoặc <span style={{ color: '#7C3AED', fontWeight: 'bold' }}>click để chọn</span>
                             </p>
                             <p style={{ fontSize: '11px', color: '#9CA3AF' }}>
                                 Hỗ trợ PDF, DOCX, Hình ảnh...
                             </p>
                             {isUploading && (
-                                <div style={{ marginTop: '8px', fontSize: '12px', color: '#4F46E5', fontWeight: 'bold' }}>
+                                <div style={{ marginTop: '8px', fontSize: '12px', color: '#7C3AED', fontWeight: 'bold' }}>
                                     ⏳ Đang tải lên...
                                 </div>
                             )}
@@ -974,9 +1105,9 @@ export function TeacherPage() {
                                             title={file} // Tooltip showing full filename
                                             style={{
                                                 flexShrink: 0,
-                                                background: isDarkMode ? '#374151' : 'white',
+                                                background: isDarkMode ? '#1E2447' : 'white',
                                                 border: isDarkMode ? 'none' : '1px solid #E5E7EB',
-                                                color: isDarkMode ? 'white' : '#1F2937',
+                                                color: isDarkMode ? 'white' : '#131629',
                                                 borderRadius: '8px',
                                                 padding: '10px',
                                                 width: '140px',
@@ -1043,13 +1174,13 @@ export function TeacherPage() {
                                 🌡️ Độ sáng tạo
                             </label>
                             <span style={{
-                                background: isDarkMode ? '#374151' : '#EEF2FF',
-                                color: isDarkMode ? 'white' : '#4F46E5',
+                                background: isDarkMode ? '#1E2447' : '#EEF2FF',
+                                color: isDarkMode ? 'white' : '#7C3AED',
                                 padding: '4px 12px',
                                 borderRadius: '12px',
                                 fontSize: '14px',
                                 fontWeight: 'bold',
-                                border: isDarkMode ? '1px solid #4B5563' : '1px solid #C7D2FE'
+                                border: isDarkMode ? '1px solid #2D3250' : '1px solid #C7D2FE'
                             }}>
                                 {temperature}
                             </span>
@@ -1064,11 +1195,11 @@ export function TeacherPage() {
                             style={{
                                 width: '100%',
                                 height: '6px',
-                                background: isDarkMode ? '#374151' : '#E5E7EB',
+                                background: isDarkMode ? '#1E2447' : '#E5E7EB',
                                 borderRadius: '5px',
                                 outline: 'none',
                                 cursor: 'pointer',
-                                accentColor: '#4F46E5'
+                                accentColor: '#7C3AED'
                             }}
                         />
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '12px', color: '#9CA3AF' }}>
@@ -1099,9 +1230,9 @@ export function TeacherPage() {
                                 width: '80px',
                                 padding: '8px 12px',
                                 borderRadius: '8px',
-                                border: isDarkMode ? '2px solid #374151' : '2px solid #E5E7EB',
+                                border: isDarkMode ? '2px solid #1E2447' : '2px solid #E5E7EB',
                                 fontSize: '14px',
-                                background: isDarkMode ? '#374151' : 'white',
+                                background: isDarkMode ? '#1E2447' : 'white',
                                 color: isDarkMode ? 'white' : 'inherit'
                             }}
                         />
@@ -1119,7 +1250,7 @@ export function TeacherPage() {
                         style={{
                             width: '100%',
                             padding: '14px',
-                            background: isGenerating ? '#9CA3AF' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                            background: isGenerating ? '#9CA3AF' : 'linear-gradient(135deg, #7C3AED 0%, #A855F7 100%)',
                             color: 'white',
                             border: 'none',
                             borderRadius: '10px',
@@ -1136,7 +1267,7 @@ export function TeacherPage() {
 
                 {/* Column 2: My Exams */}
                 <div style={{
-                    background: isDarkMode ? '#1F2937' : 'white',
+                    background: isDarkMode ? '#131629' : 'white',
                     borderRadius: '16px',
                     padding: '24px',
                     boxShadow: '0 10px 40px rgba(0,0,0,0.2)',
@@ -1145,7 +1276,7 @@ export function TeacherPage() {
                     flexDirection: 'column',
                     overflow: 'hidden'
                 }}>
-                    <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '20px', color: isDarkMode ? '#818CF8' : '#4F46E5', flexShrink: 0 }}>
+                    <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '20px', color: isDarkMode ? '#818CF8' : '#7C3AED', flexShrink: 0 }}>
                         📚 Bài kiểm tra của tôi ({teacherExams.length})
                     </h2>
 
@@ -1159,10 +1290,10 @@ export function TeacherPage() {
                                 key={exam.exam_id}
                                 style={{
                                     padding: '14px',
-                                    background: selectedExam === exam.exam_id ? (isDarkMode ? '#312E81' : '#EEF2FF') : (isDarkMode ? '#374151' : '#F9FAFB'),
+                                    background: selectedExam === exam.exam_id ? (isDarkMode ? '#312E81' : '#EEF2FF') : (isDarkMode ? '#1E2447' : '#F9FAFB'),
                                     borderRadius: '10px',
                                     marginBottom: '10px',
-                                    border: selectedExam === exam.exam_id ? '2px solid #4F46E5' : '2px solid transparent',
+                                    border: selectedExam === exam.exam_id ? '2px solid #7C3AED' : '2px solid transparent',
                                     position: 'relative'
                                 }}
                             >
@@ -1180,13 +1311,13 @@ export function TeacherPage() {
                                         onClick={(e) => { e.stopPropagation(); copyExamLink(exam.exam_id, exam.student_url); }}
                                         style={{
                                             padding: '6px 8px',
-                                            background: copiedExamId === exam.exam_id ? '#D1FAE5' : (isDarkMode ? '#4B5563' : '#F3F4F6'),
+                                            background: copiedExamId === exam.exam_id ? '#D1FAE5' : (isDarkMode ? '#2D3250' : '#F3F4F6'),
                                             border: `1px solid ${copiedExamId === exam.exam_id ? '#10B981' : (isDarkMode ? '#6B7280' : '#D1D5DB')}`,
                                             borderRadius: '6px',
                                             cursor: 'pointer',
                                             fontSize: '14px',
                                             lineHeight: 1,
-                                            color: copiedExamId === exam.exam_id ? '#10B981' : (isDarkMode ? '#D1D5DB' : '#374151')
+                                            color: copiedExamId === exam.exam_id ? '#10B981' : (isDarkMode ? '#D1D5DB' : '#1E2447')
                                         }}
                                         title={copiedExamId === exam.exam_id ? 'Đã copy!' : 'Copy link học sinh'}
                                     >
@@ -1196,13 +1327,13 @@ export function TeacherPage() {
                                         onClick={(e) => { e.stopPropagation(); deleteExam(exam.exam_id); }}
                                         style={{
                                             padding: '6px 8px',
-                                            background: isDarkMode ? '#4B5563' : '#F3F4F6',
+                                            background: isDarkMode ? '#2D3250' : '#F3F4F6',
                                             border: `1px solid ${isDarkMode ? '#6B7280' : '#D1D5DB'}`,
                                             borderRadius: '6px',
                                             cursor: 'pointer',
                                             fontSize: '14px',
                                             lineHeight: 1,
-                                            color: isDarkMode ? '#D1D5DB' : '#374151'
+                                            color: isDarkMode ? '#D1D5DB' : '#1E2447'
                                         }}
                                         title="Xóa bài kiểm tra"
                                     >
@@ -1225,9 +1356,9 @@ export function TeacherPage() {
                                         onClick={() => loadExamFull(exam.exam_id)}
                                         style={{
                                             padding: '6px 10px',
-                                            background: viewMode === 'questions' && selectedExam === exam.exam_id ? '#4F46E5' : (isDarkMode ? '#4B5563' : '#F3F4F6'),
-                                            color: viewMode === 'questions' && selectedExam === exam.exam_id ? 'white' : (isDarkMode ? '#D1D5DB' : '#374151'),
-                                            border: `1px solid ${viewMode === 'questions' && selectedExam === exam.exam_id ? '#4F46E5' : (isDarkMode ? '#6B7280' : '#D1D5DB')}`,
+                                            background: viewMode === 'questions' && selectedExam === exam.exam_id ? '#7C3AED' : (isDarkMode ? '#2D3250' : '#F3F4F6'),
+                                            color: viewMode === 'questions' && selectedExam === exam.exam_id ? 'white' : (isDarkMode ? '#D1D5DB' : '#1E2447'),
+                                            border: `1px solid ${viewMode === 'questions' && selectedExam === exam.exam_id ? '#7C3AED' : (isDarkMode ? '#6B7280' : '#D1D5DB')}`,
                                             borderRadius: '6px',
                                             fontSize: '11px',
                                             cursor: 'pointer'
@@ -1239,9 +1370,9 @@ export function TeacherPage() {
                                         onClick={() => loadStats(exam.exam_id)}
                                         style={{
                                             padding: '6px 10px',
-                                            background: viewMode === 'stats' && selectedExam === exam.exam_id ? '#059669' : (isDarkMode ? '#4B5563' : '#F3F4F6'),
-                                            color: viewMode === 'stats' && selectedExam === exam.exam_id ? 'white' : (isDarkMode ? '#D1D5DB' : '#374151'),
-                                            border: `1px solid ${viewMode === 'stats' && selectedExam === exam.exam_id ? '#059669' : (isDarkMode ? '#6B7280' : '#D1D5DB')}`,
+                                            background: viewMode === 'stats' && selectedExam === exam.exam_id ? '#10B981' : (isDarkMode ? '#2D3250' : '#F3F4F6'),
+                                            color: viewMode === 'stats' && selectedExam === exam.exam_id ? 'white' : (isDarkMode ? '#D1D5DB' : '#1E2447'),
+                                            border: `1px solid ${viewMode === 'stats' && selectedExam === exam.exam_id ? '#10B981' : (isDarkMode ? '#6B7280' : '#D1D5DB')}`,
                                             borderRadius: '6px',
                                             fontSize: '11px',
                                             cursor: 'pointer'
@@ -1253,8 +1384,8 @@ export function TeacherPage() {
                                         onClick={(e) => { e.stopPropagation(); exportExamToPDF(exam.exam_id, exam.prompt); }}
                                         style={{
                                             padding: '6px 10px',
-                                            background: isDarkMode ? '#4B5563' : '#F3F4F6',
-                                            color: isDarkMode ? '#D1D5DB' : '#374151',
+                                            background: isDarkMode ? '#2D3250' : '#F3F4F6',
+                                            color: isDarkMode ? '#D1D5DB' : '#1E2447',
                                             border: `1px solid ${isDarkMode ? '#6B7280' : '#D1D5DB'}`,
                                             borderRadius: '6px',
                                             fontSize: '11px',
@@ -1272,7 +1403,7 @@ export function TeacherPage() {
 
                 {/* Column 3: View Questions / Stats */}
                 <div style={{
-                    background: isDarkMode ? '#1F2937' : 'white',
+                    background: isDarkMode ? '#131629' : 'white',
                     borderRadius: '16px',
                     padding: '24px',
                     boxShadow: '0 10px 40px rgba(0,0,0,0.2)',
@@ -1290,14 +1421,14 @@ export function TeacherPage() {
                         </div>
                     ) : viewMode === 'questions' && examFull ? (
                         <>
-                            <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '16px', color: isDarkMode ? '#818CF8' : '#4F46E5' }}>
+                            <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '16px', color: isDarkMode ? '#818CF8' : '#7C3AED' }}>
                                 📝 Câu hỏi ({examFull.questions.length})
                             </h2>
                             <div style={{ maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
                                 {examFull.questions.map((q: Question, idx: number) => (
-                                    <div key={`${q.id}-${idx}`} style={{ padding: '14px', background: isDarkMode ? '#374151' : '#F9FAFB', borderRadius: '10px', marginBottom: '12px' }}>
+                                    <div key={`${q.id}-${idx}`} style={{ padding: '14px', background: isDarkMode ? '#1E2447' : '#F9FAFB', borderRadius: '10px', marginBottom: '12px' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                                            <p style={{ fontWeight: '600', fontSize: '14px', color: isDarkMode ? 'white' : '#1F2937' }}>
+                                            <p style={{ fontWeight: '600', fontSize: '14px', color: isDarkMode ? 'white' : '#131629' }}>
                                                 Câu {idx + 1}:
                                             </p>
                                             <button
@@ -1342,7 +1473,7 @@ export function TeacherPage() {
                         </>
                     ) : viewMode === 'stats' && examStats ? (
                         <>
-                            <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '16px', color: '#059669' }}>
+                            <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '16px', color: '#10B981' }}>
                                 📊 Thống kê ({examStats.total_students} học sinh)
                             </h2>
 
@@ -1354,7 +1485,7 @@ export function TeacherPage() {
                                             <p style={{ fontSize: '12px', color: '#6B7280' }}>Trung bình</p>
                                         </div>
                                         <div style={{ padding: '16px', background: '#ECFDF5', borderRadius: '10px', textAlign: 'center' }}>
-                                            <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#059669' }}>{examStats.statistics.highest_score}%</p>
+                                            <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#10B981' }}>{examStats.statistics.highest_score}%</p>
                                             <p style={{ fontSize: '12px', color: '#6B7280' }}>Cao nhất</p>
                                         </div>
                                         <div style={{ padding: '16px', background: '#FEF3C7', borderRadius: '10px', textAlign: 'center' }}>
@@ -1373,14 +1504,14 @@ export function TeacherPage() {
                                         {examStats.students.map((student: StudentResult, idx: number) => (
                                             <div key={idx} style={{
                                                 padding: '12px',
-                                                background: isDarkMode ? '#374151' : '#F9FAFB',
+                                                background: isDarkMode ? '#1E2447' : '#F9FAFB',
                                                 borderRadius: '8px',
                                                 marginBottom: '8px',
-                                                border: isDarkMode ? '1px solid #4B5563' : 'none'
+                                                border: isDarkMode ? '1px solid #2D3250' : 'none'
                                             }}>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                     <div>
-                                                        <p style={{ fontWeight: '500', fontSize: '14px', color: isDarkMode ? 'white' : '#1F2937' }}>{student.student_name}</p>
+                                                        <p style={{ fontWeight: '500', fontSize: '14px', color: isDarkMode ? 'white' : '#131629' }}>{student.student_name}</p>
                                                         <p style={{ fontSize: '11px', color: isDarkMode ? '#D1D5DB' : '#6B7280' }}>
                                                             {new Date(student.submitted_at).toLocaleString('vi-VN')}
                                                         </p>
@@ -1388,7 +1519,7 @@ export function TeacherPage() {
                                                     <div style={{
                                                         fontSize: '18px',
                                                         fontWeight: 'bold',
-                                                        color: student.percentage >= 80 ? '#059669' : student.percentage >= 50 ? '#D97706' : '#DC2626'
+                                                        color: student.percentage >= 80 ? '#10B981' : student.percentage >= 50 ? '#D97706' : '#DC2626'
                                                     }}>
                                                         {student.score}/{student.total} ({student.percentage}%)
                                                     </div>
@@ -1409,7 +1540,7 @@ export function TeacherPage() {
                                                                 AI đánh giá: {student.analysis.score}/10
                                                             </span>
                                                         </div>
-                                                        <p style={{ fontSize: '12px', color: isDarkMode ? '#D1D5DB' : '#374151', fontStyle: 'italic', lineHeight: '1.4' }}>
+                                                        <p style={{ fontSize: '12px', color: isDarkMode ? '#D1D5DB' : '#1E2447', fontStyle: 'italic', lineHeight: '1.4' }}>
                                                             "{student.analysis.summary}"
                                                         </p>
                                                     </div>

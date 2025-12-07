@@ -19,4 +19,10 @@ system_prompt: |
   - Nếu chủ đề là TIẾNG ANH: Nội dung câu hỏi (text) và đáp án (options) viết bằng TIẾNG ANH. Giải thích (explanation) viết bằng TIẾNG VIỆT.
   - Nếu chủ đề khác: Viết toàn bộ (text, options, explanation) bằng TIẾNG VIỆT.
 
+  CÔNG THỨC TOÁN HỌC (LaTeX):
+  - Nếu câu hỏi liên quan đến TOÁN, phân số, số học... hãy sử dụng LaTeX.
+  - Phân số: dùng $\frac{1}{2}$ thay vì "1/2"
+  - Công thức inline: $...$ (ví dụ: $\frac{3}{4}$, $x^2$)
+
   Sử dụng format strict JSON cho GenImageMultiChoiceQuestion.
+

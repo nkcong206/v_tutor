@@ -44,12 +44,29 @@ const normalizeCorrectAnswer = (answer: string | number | undefined, options: st
 
 // Helper to check if answer is correct
 const isAnswerCorrect = (
-    studentAnswer: string,
-    correctAnswer: string | number | undefined,
+    studentAnswer: any, // Can be string, number, or array for multi-choice
+    correctAnswer: string | number | number[] | undefined,
     options: string[]
 ): boolean => {
-    const normalizedCorrect = normalizeCorrectAnswer(correctAnswer, options);
-    return studentAnswer.toUpperCase() === normalizedCorrect;
+    try {
+        // Handle multi-choice: studentAnswer and correctAnswer are both arrays of indices
+        if (Array.isArray(studentAnswer) && Array.isArray(correctAnswer)) {
+            const sortedStudent = [...studentAnswer].sort();
+            const sortedCorrect = [...correctAnswer].sort();
+            return JSON.stringify(sortedStudent) === JSON.stringify(sortedCorrect);
+        }
+
+        // Handle single choice: convert to string for comparison
+        if (typeof studentAnswer !== 'string') {
+            studentAnswer = String(studentAnswer);
+        }
+
+        const normalizedCorrect = normalizeCorrectAnswer(correctAnswer as string | number | undefined, options);
+        return studentAnswer.toUpperCase() === normalizedCorrect;
+    } catch (error) {
+        console.error('[isAnswerCorrect] Error:', error);
+        return false;
+    }
 };
 
 // Helper to check if question is a media type
@@ -238,10 +255,37 @@ export function StudentPage() {
 
     // User-initiated chat message (visible in chat)
     const sendChatMessage = async (message: string) => {
-        if (!message.trim()) return;
+        console.log('[AI Tutor Chat] === sendChatMessage START ===');
+        console.log('[AI Tutor Chat] Message:', message);
+
+        if (!message.trim()) {
+            console.log('[AI Tutor Chat] ❌ Empty message, returning');
+            return;
+        }
 
         const question = questions[currentQuestion];
-        if (!question) return;
+        if (!question) {
+            console.log('[AI Tutor Chat] ❌ No current question, returning');
+            return;
+        }
+
+        // Get current answer state
+        const currentAnswer = answers[question.id.toString()];
+        const hasAnswered = currentAnswer !== undefined && currentAnswer !== '' && currentAnswer !== null;
+
+        // Only check is_correct if student has answered
+        let isCorrect: boolean | undefined = undefined;
+        if (hasAnswered) {
+            isCorrect = isAnswerCorrect(currentAnswer, question.correct_answer, question.options);
+        }
+
+        const attemptCount = attemptCounts[question.id] || 0;
+
+        console.log('[AI Tutor Chat] Question:', question.id, '-', question.text?.substring(0, 50) + '...');
+        console.log('[AI Tutor Chat] Has Answered:', hasAnswered);
+        console.log('[AI Tutor Chat] Current Answer:', currentAnswer);
+        console.log('[AI Tutor Chat] Is Correct:', isCorrect);
+        console.log('[AI Tutor Chat] Attempt Count:', attemptCount);
 
         // Add user message to visible chat
         setChatMessages(prev => [...prev, { role: 'user', content: message }]);
@@ -249,31 +293,42 @@ export function StudentPage() {
         setIsChatLoading(true);
 
         try {
+            const requestBody = {
+                exam_id: examId,
+                question_id: question.id,
+                student_name: studentName,
+                message: message,
+                question_text: question.text,
+                options: question.options,
+                selected_answer: hasAnswered ? currentAnswer : null,
+                is_correct: isCorrect, // Will be undefined if not answered
+                attempt_count: attemptCount
+            };
+
+            console.log('[AI Tutor Chat] Request Body:', JSON.stringify(requestBody, null, 2));
+
             const response = await fetch(`${API_BASE_URL}/api/tutor/chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    exam_id: examId,
-                    question_id: question.id,
-                    student_name: studentName,
-                    message: message,
-                    question_text: question.text,
-                    options: question.options,
-                    selected_answer: answers[question.id.toString()],
-                    is_correct: isAnswerCorrect(answers[question.id.toString()], question.correct_answer, question.options),
-                    attempt_count: attemptCounts[question.id] || 0
-                })
+                body: JSON.stringify(requestBody)
             });
+
+            console.log('[AI Tutor Chat] Response Status:', response.status);
 
             if (response.ok) {
                 const data = await response.json();
+                console.log('[AI Tutor Chat] ✅ Response Data:', data);
                 setChatMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
                 setSuggestedPrompts(data.suggested_prompts);
+            } else {
+                const errorText = await response.text();
+                console.error('[AI Tutor Chat] ❌ Response Error:', response.status, errorText);
             }
         } catch (err) {
-            console.error('Chat error:', err);
+            console.error('[AI Tutor Chat] ❌ Fetch Error:', err);
         } finally {
             setIsChatLoading(false);
+            console.log('[AI Tutor Chat] === sendChatMessage END ===');
         }
     };
     const handleSubmit = async () => {
@@ -382,8 +437,8 @@ export function StudentPage() {
                 position: 'fixed',
                 top: '20px',
                 right: '20px',
-                background: isDarkMode ? '#374151' : 'white',
-                border: isDarkMode ? '1px solid #4B5563' : '1px solid #E5E7EB',
+                background: isDarkMode ? '#1E2447' : 'white',
+                border: isDarkMode ? '1px solid #2D3250' : '1px solid #E5E7EB',
                 borderRadius: '50%',
                 width: '40px',
                 height: '40px',
@@ -406,60 +461,136 @@ export function StudentPage() {
         return (
             <div style={{
                 minHeight: '100vh',
-                background: isDarkMode ? 'linear-gradient(135deg, #111827 0%, #1F2937 100%)' : 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
+                background: isDarkMode
+                    ? 'linear-gradient(135deg, #0A0F1C 0%, #131629 50%, #1E2447 100%)'
+                    : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                padding: '20px'
+                padding: '20px',
+                position: 'relative',
+                overflow: 'hidden'
             }}>
+                {/* Decorative glow orbs */}
+                <div style={{
+                    position: 'absolute',
+                    width: '400px',
+                    height: '400px',
+                    background: 'radial-gradient(circle, rgba(124, 58, 237, 0.15) 0%, transparent 70%)',
+                    top: '-100px',
+                    right: '-100px',
+                    borderRadius: '50%',
+                    pointerEvents: 'none'
+                }} />
+                <div style={{
+                    position: 'absolute',
+                    width: '300px',
+                    height: '300px',
+                    background: 'radial-gradient(circle, rgba(168, 85, 247, 0.1) 0%, transparent 70%)',
+                    bottom: '-50px',
+                    left: '-50px',
+                    borderRadius: '50%',
+                    pointerEvents: 'none'
+                }} />
+
                 <ThemeToggle />
                 <div style={{
-                    background: isDarkMode ? '#374151' : 'white',
-                    borderRadius: '20px',
-                    padding: '40px',
-                    maxWidth: '400px',
+                    background: isDarkMode
+                        ? 'rgba(30, 36, 71, 0.8)'
+                        : 'rgba(255, 255, 255, 0.95)',
+                    backdropFilter: 'blur(20px)',
+                    borderRadius: '24px',
+                    padding: '48px 40px',
+                    maxWidth: '420px',
                     width: '100%',
-                    boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+                    boxShadow: isDarkMode
+                        ? '0 25px 80px rgba(0,0,0,0.5), 0 0 40px rgba(124, 58, 237, 0.1)'
+                        : '0 25px 80px rgba(0,0,0,0.15)',
                     textAlign: 'center',
-                    color: isDarkMode ? 'white' : '#1F2937'
+                    color: isDarkMode ? 'white' : '#131629',
+                    border: isDarkMode ? '1px solid rgba(124, 58, 237, 0.2)' : 'none'
                 }}>
-                    <h1 style={{ fontSize: '32px', marginBottom: '8px' }}>🎓</h1>
-                    <h2 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '24px' }}>
-                        Bài kiểm tra
+                    {/* Animated icon */}
+                    <div style={{
+                        fontSize: '56px',
+                        marginBottom: '16px',
+                        animation: 'float 3s ease-in-out infinite'
+                    }}>
+                        🎓
+                    </div>
+                    <style>{`
+                        @keyframes float {
+                            0%, 100% { transform: translateY(0px); }
+                            50% { transform: translateY(-10px); }
+                        }
+                        @keyframes pulse {
+                            0%, 100% { box-shadow: 0 0 20px rgba(124, 58, 237, 0.4); }
+                            50% { box-shadow: 0 0 40px rgba(124, 58, 237, 0.6); }
+                        }
+                        @keyframes shimmer {
+                            0% { background-position: -200% center; }
+                            100% { background-position: 200% center; }
+                        }
+                    `}</style>
+                    <h2 style={{
+                        fontSize: '28px',
+                        fontWeight: '700',
+                        marginBottom: '8px',
+                        color: isDarkMode ? '#A855F7' : '#7C3AED'
+                    }}>
+                        ✨ Bài kiểm tra
                     </h2>
+                    <p style={{
+                        color: isDarkMode ? '#9CA3AF' : '#6B7280',
+                        marginBottom: '32px',
+                        fontSize: '15px'
+                    }}>
+                        Nhập tên để bắt đầu làm bài
+                    </p>
 
-                    <div style={{ marginBottom: '20px' }}>
-                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', color: isDarkMode ? '#D1D5DB' : '#374151' }}>
-                            Nhập họ và tên của bạn:
-                        </label>
+                    <div style={{ marginBottom: '24px' }}>
                         <input
-                            placeholder="VD: Nguyễn Văn A"
+                            placeholder="Nhập họ và tên..."
                             value={studentName}
                             onChange={(e) => setStudentName(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleStart()}
                             style={{
                                 width: '100%',
-                                padding: '14px',
-                                borderRadius: '10px',
-                                border: '2px solid #E5E7EB',
+                                padding: '16px 20px',
+                                borderRadius: '14px',
+                                border: isDarkMode
+                                    ? '2px solid rgba(124, 58, 237, 0.3)'
+                                    : '2px solid #E5E7EB',
                                 fontSize: '16px',
                                 textAlign: 'center',
                                 boxSizing: 'border-box',
-                                background: isDarkMode ? '#1F2937' : 'white',
-                                color: isDarkMode ? 'white' : 'black'
+                                background: isDarkMode ? 'rgba(19, 22, 41, 0.8)' : 'white',
+                                color: isDarkMode ? 'white' : 'black',
+                                outline: 'none',
+                                transition: 'all 0.3s ease'
+                            }}
+                            onFocus={(e) => {
+                                e.target.style.borderColor = '#7C3AED';
+                                e.target.style.boxShadow = '0 0 20px rgba(124, 58, 237, 0.2)';
+                            }}
+                            onBlur={(e) => {
+                                e.target.style.borderColor = isDarkMode ? 'rgba(124, 58, 237, 0.3)' : '#E5E7EB';
+                                e.target.style.boxShadow = 'none';
                             }}
                         />
                     </div>
 
                     {error && (
                         <div style={{
-                            padding: '12px',
-                            background: '#FEE2E2',
-                            borderRadius: '8px',
-                            color: '#DC2626',
-                            marginBottom: '16px'
+                            padding: '14px',
+                            background: isDarkMode ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2',
+                            borderRadius: '12px',
+                            color: '#EF4444',
+                            marginBottom: '20px',
+                            fontSize: '14px',
+                            border: '1px solid rgba(239, 68, 68, 0.2)'
                         }}>
-                            {error}
+                            ⚠️ {error}
                         </div>
                     )}
 
@@ -468,17 +599,35 @@ export function StudentPage() {
                         disabled={!studentName.trim()}
                         style={{
                             width: '100%',
-                            padding: '14px',
-                            background: studentName.trim() ? (isDarkMode ? '#10B981' : 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)') : '#D1D5DB',
+                            padding: '16px',
+                            background: studentName.trim()
+                                ? 'linear-gradient(135deg, #7C3AED 0%, #A855F7 100%)'
+                                : (isDarkMode ? '#2D3250' : '#D1D5DB'),
                             color: 'white',
                             border: 'none',
-                            borderRadius: '10px',
-                            fontSize: '16px',
-                            fontWeight: 'bold',
-                            cursor: studentName.trim() ? 'pointer' : 'not-allowed'
+                            borderRadius: '14px',
+                            fontSize: '17px',
+                            fontWeight: '600',
+                            cursor: studentName.trim() ? 'pointer' : 'not-allowed',
+                            transition: 'all 0.3s ease',
+                            boxShadow: studentName.trim()
+                                ? '0 10px 30px rgba(124, 58, 237, 0.3)'
+                                : 'none'
+                        }}
+                        onMouseEnter={(e) => {
+                            if (studentName.trim()) {
+                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                e.currentTarget.style.boxShadow = '0 15px 40px rgba(124, 58, 237, 0.4)';
+                            }
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = 'translateY(0)';
+                            if (studentName.trim()) {
+                                e.currentTarget.style.boxShadow = '0 10px 30px rgba(124, 58, 237, 0.3)';
+                            }
                         }}
                     >
-                        Bắt đầu làm bài →
+                        ✨ Bắt đầu làm bài
                     </button>
                 </div>
             </div>
@@ -490,7 +639,7 @@ export function StudentPage() {
         return (
             <div style={{
                 minHeight: '100vh',
-                background: isDarkMode ? 'linear-gradient(135deg, #111827 0%, #1F2937 100%)' : 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
+                background: isDarkMode ? 'linear-gradient(135deg, #0A0F1C 0%, #131629 100%)' : 'linear-gradient(135deg, #7C3AED 0%, #A855F7 100%)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center'
@@ -524,7 +673,6 @@ export function StudentPage() {
                     maxWidth: '400px'
                 }}>
                     <p style={{ fontSize: '48px', marginBottom: '16px' }}>❌</p>
-                    <h2 style={{ color: '#DC2626', marginBottom: '8px' }}>Có lỗi xảy ra</h2>
                     <p style={{ color: '#6B7280' }}>{error}</p>
                 </div>
             </div>
@@ -534,26 +682,26 @@ export function StudentPage() {
     // Result Screen
     if (result) {
         // Use neutral colors for both light and dark mode
-        const bgColor = isDarkMode ? '#4B5563' : '#F3F4F6';
+        const bgColor = isDarkMode ? '#2D3250' : '#F3F4F6';
         const textColor = isDarkMode
             ? '#F9FAFB'
-            : (result.percentage >= 80 ? '#059669' : result.percentage >= 50 ? '#D97706' : '#DC2626');
+            : (result.percentage >= 80 ? '#10B981' : result.percentage >= 50 ? '#D97706' : '#DC2626');
         const emoji = result.percentage >= 80 ? '🎉' : result.percentage >= 50 ? '👍' : '💪';
 
         return (
             <div style={{
                 minHeight: '100vh',
-                background: isDarkMode ? 'linear-gradient(135deg, #111827 0%, #1F2937 100%)' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                background: isDarkMode ? 'linear-gradient(135deg, #0A0F1C 0%, #131629 100%)' : 'linear-gradient(135deg, #7C3AED 0%, #A855F7 100%)',
                 padding: '20px'
             }}>
                 <ThemeToggle />
                 <div style={{ maxWidth: '900px', margin: '0 auto' }}>
                     <div style={{
-                        background: isDarkMode ? '#374151' : 'white',
+                        background: isDarkMode ? '#1E2447' : 'white',
                         borderRadius: '20px',
                         padding: '32px',
                         boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-                        color: isDarkMode ? 'white' : '#1F2937'
+                        color: isDarkMode ? 'white' : '#131629'
                     }}>
                         <h1 style={{ textAlign: 'center', marginBottom: '8px' }}>
                             Kết quả bài kiểm tra
@@ -576,7 +724,7 @@ export function StudentPage() {
                             <p style={{ fontSize: '28px', fontWeight: 'bold', color: textColor }}>
                                 {result.percentage}%
                             </p>
-                            <p style={{ fontSize: '24px', marginTop: '8px', color: isDarkMode ? 'white' : '#1F2937' }}>
+                            <p style={{ fontSize: '24px', marginTop: '8px', color: isDarkMode ? 'white' : '#131629' }}>
                                 {emoji} {result.percentage >= 80 ? 'Xuất sắc!' : result.percentage >= 50 ? 'Khá tốt!' : 'Cần cố gắng thêm!'}
                             </p>
                         </div>
@@ -605,7 +753,7 @@ export function StudentPage() {
                                             Điểm thái độ: {result.analysis.score}/10
                                         </span>
                                         <div style={{
-                                            height: '8px', width: '100%', background: isDarkMode ? '#1F2937' : 'white',
+                                            height: '8px', width: '100%', background: isDarkMode ? '#131629' : 'white',
                                             borderRadius: '4px', marginTop: '4px', overflow: 'hidden'
                                         }}>
                                             <div style={{
@@ -617,7 +765,7 @@ export function StudentPage() {
                                     </div>
                                     <p style={{
                                         lineHeight: '1.6',
-                                        color: isDarkMode ? '#D1D5DB' : '#374151',
+                                        color: isDarkMode ? '#D1D5DB' : '#1E2447',
                                         fontStyle: 'italic'
                                     }}>
                                         "{result.analysis.summary}"
@@ -634,20 +782,20 @@ export function StudentPage() {
                                 style={{
                                     padding: '16px',
                                     borderRadius: '12px',
-                                    background: isDarkMode ? '#4B5563' : '#F3F4F6',
+                                    background: isDarkMode ? '#2D3250' : '#F3F4F6',
                                     marginBottom: '12px',
-                                    color: isDarkMode ? 'white' : '#1F2937'
+                                    color: isDarkMode ? 'white' : '#131629'
                                 }}
                             >
                                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
                                     <span style={{ fontSize: '20px' }}>{answer.is_correct ? '✅' : '❌'}</span>
                                     <div style={{ flex: 1 }}>
                                         <p style={{ fontWeight: '500', marginBottom: '8px' }}>Câu {qId}: {answer.question_text}</p>
-                                        <p style={{ fontSize: '14px', color: isDarkMode ? '#D1D5DB' : '#374151' }}>
+                                        <p style={{ fontSize: '14px', color: isDarkMode ? '#D1D5DB' : '#1E2447' }}>
                                             Bạn chọn: <strong>{answer.student_answer || '(Chưa trả lời)'}</strong>
                                         </p>
                                         {!answer.is_correct && (
-                                            <p style={{ fontSize: '14px', color: '#059669' }}>
+                                            <p style={{ fontSize: '14px', color: '#10B981' }}>
                                                 Đáp án đúng: <strong>{answer.correct_answer}</strong>
                                             </p>
                                         )}
@@ -670,12 +818,12 @@ export function StudentPage() {
     const answeredCount = Object.keys(answers).length;
 
     return (
-        <div style={{ minHeight: '100vh', background: isDarkMode ? '#111827' : '#F3F4F6', position: 'relative' }}>
+        <div style={{ minHeight: '100vh', background: isDarkMode ? '#0A0F1C' : '#F3F4F6', position: 'relative' }}>
             <ThemeToggle />
             {/* Header */}
             <div style={{
-                background: isDarkMode ? '#1F2937' : 'white',
-                borderBottom: isDarkMode ? '1px solid #374151' : '1px solid #E5E7EB',
+                background: isDarkMode ? '#131629' : 'white',
+                borderBottom: isDarkMode ? '1px solid #1E2447' : '1px solid #E5E7EB',
                 padding: '16px 24px',
                 color: isDarkMode ? 'white' : 'inherit',
                 display: 'flex',
@@ -697,9 +845,9 @@ export function StudentPage() {
             </div>
 
             {/* Progress Bar Container */}
-            <div style={{ background: isDarkMode ? '#1F2937' : 'white', paddingBottom: '12px' }}>
-                <div style={{ maxWidth: '900px', margin: '0 auto', height: '4px', background: isDarkMode ? '#374151' : '#E5E7EB', borderRadius: '2px' }}>
-                    <div style={{ width: `${progress}%`, height: '100%', background: '#4F46E5', borderRadius: '2px', transition: 'width 0.3s' }} />
+            <div style={{ background: isDarkMode ? '#131629' : 'white', paddingBottom: '12px' }}>
+                <div style={{ maxWidth: '900px', margin: '0 auto', height: '4px', background: isDarkMode ? '#1E2447' : '#E5E7EB', borderRadius: '2px' }}>
+                    <div style={{ width: `${progress}%`, height: '100%', background: '#7C3AED', borderRadius: '2px', transition: 'width 0.3s' }} />
                 </div>
             </div>
 
@@ -707,7 +855,7 @@ export function StudentPage() {
             <div style={{ maxWidth: '900px', margin: '0 auto', padding: '24px' }}>
                 {question && (
                     <div style={{
-                        background: isDarkMode ? '#1F2937' : 'white',
+                        background: isDarkMode ? '#131629' : 'white',
                         borderRadius: '16px',
                         padding: '32px',
                         boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
@@ -724,45 +872,45 @@ export function StudentPage() {
                         {/* Question Type Badge */}
                         {/* Question Type Badge */}
                         {(() => {
-                            let badgeInfo = { label: '', icon: '', bg: '', color: '' };
+                            let badgeInfo = { label: '', icon: '', bgLight: '', bgDark: '', colorLight: '', colorDark: '' };
                             const t = question.type || 'single_choice';
 
                             switch (t) {
                                 // Text Questions
                                 case 'single_choice':
-                                    badgeInfo = { label: 'Chọn 1 câu trả lời', icon: '📝', bg: '#F3F4F6', color: '#374151' };
+                                    badgeInfo = { label: 'Chọn 1 câu trả lời', icon: '📝', bgLight: '#F3F4F6', bgDark: '#1E2447', colorLight: '#1E2447', colorDark: '#A5B4FC' };
                                     break;
                                 case 'multi_choice':
-                                    badgeInfo = { label: 'Chọn nhiều câu trả lời', icon: '📝', bg: '#E0E7FF', color: '#3730A3' };
+                                    badgeInfo = { label: 'Chọn nhiều câu trả lời', icon: '📝', bgLight: '#E0E7FF', bgDark: '#312E81', colorLight: '#3730A3', colorDark: '#C4B5FD' };
                                     break;
                                 case 'fill_in_blanks':
-                                    badgeInfo = { label: 'Điền từ vào chỗ trống', icon: '✏️', bg: '#FCE7F3', color: '#9D174D' };
+                                    badgeInfo = { label: 'Điền từ vào chỗ trống', icon: '✏️', bgLight: '#FCE7F3', bgDark: '#4C1D4F', colorLight: '#9D174D', colorDark: '#F9A8D4' };
                                     break;
 
                                 // Image Questions
                                 case 'image_single_choice':
-                                    badgeInfo = { label: 'Nhìn ảnh và chọn 1 câu trả lời', icon: '🖼️', bg: '#DBEAFE', color: '#1E40AF' };
+                                    badgeInfo = { label: 'Nhìn ảnh và chọn 1 câu trả lời', icon: '🖼️', bgLight: '#DBEAFE', bgDark: '#1E3A5F', colorLight: '#1E40AF', colorDark: '#93C5FD' };
                                     break;
                                 case 'image_multi_choice':
-                                    badgeInfo = { label: 'Nhìn ảnh và chọn nhiều câu trả lời', icon: '🖼️', bg: '#DBEAFE', color: '#1E40AF' };
+                                    badgeInfo = { label: 'Nhìn ảnh và chọn nhiều câu trả lời', icon: '🖼️', bgLight: '#DBEAFE', bgDark: '#1E3A5F', colorLight: '#1E40AF', colorDark: '#93C5FD' };
                                     break;
                                 case 'image_fill_in_blanks':
-                                    badgeInfo = { label: 'Nhìn ảnh và điền từ vào chỗ trống', icon: '🖼️', bg: '#DBEAFE', color: '#1E40AF' };
+                                    badgeInfo = { label: 'Nhìn ảnh và điền từ vào chỗ trống', icon: '🖼️', bgLight: '#DBEAFE', bgDark: '#1E3A5F', colorLight: '#1E40AF', colorDark: '#93C5FD' };
                                     break;
 
                                 // Audio Questions
                                 case 'audio_single_choice':
-                                    badgeInfo = { label: 'Lắng nghe và chọn 1 câu trả lời', icon: '🔊', bg: '#FEF3C7', color: '#92400E' };
+                                    badgeInfo = { label: 'Lắng nghe và chọn 1 câu trả lời', icon: '🔊', bgLight: '#FEF3C7', bgDark: '#422006', colorLight: '#92400E', colorDark: '#FCD34D' };
                                     break;
                                 case 'audio_multi_choice':
-                                    badgeInfo = { label: 'Lắng nghe và chọn nhiều câu trả lời', icon: '🔊', bg: '#FEF3C7', color: '#92400E' };
+                                    badgeInfo = { label: 'Lắng nghe và chọn nhiều câu trả lời', icon: '🔊', bgLight: '#FEF3C7', bgDark: '#422006', colorLight: '#92400E', colorDark: '#FCD34D' };
                                     break;
                                 case 'audio_fill_in_blanks':
-                                    badgeInfo = { label: 'Lắng nghe và điền từ phù hợp vào chỗ trống', icon: '🔊', bg: '#FEF3C7', color: '#92400E' };
+                                    badgeInfo = { label: 'Lắng nghe và điền từ phù hợp vào chỗ trống', icon: '🔊', bgLight: '#FEF3C7', bgDark: '#422006', colorLight: '#92400E', colorDark: '#FCD34D' };
                                     break;
 
                                 default:
-                                    badgeInfo = { label: t, icon: '❓', bg: '#E5E7EB', color: '#374151' };
+                                    badgeInfo = { label: t, icon: '❓', bgLight: '#E5E7EB', bgDark: '#1E2447', colorLight: '#1E2447', colorDark: '#D1D5DB' };
                             }
 
                             return (
@@ -775,8 +923,9 @@ export function StudentPage() {
                                     borderRadius: '20px',
                                     fontSize: '13px',
                                     fontWeight: '600',
-                                    background: badgeInfo.bg,
-                                    color: badgeInfo.color,
+                                    background: isDarkMode ? badgeInfo.bgDark : badgeInfo.bgLight,
+                                    color: isDarkMode ? badgeInfo.colorDark : badgeInfo.colorLight,
+                                    border: isDarkMode ? '1px solid rgba(124, 58, 237, 0.2)' : 'none',
                                     transform: 'translateX(-2px)', // Visual alignment
                                 }}>
                                     <span>{badgeInfo.icon}</span>
@@ -827,14 +976,14 @@ export function StudentPage() {
                             display: 'flex',
                             justifyContent: 'space-between',
                             paddingTop: '24px',
-                            borderTop: isDarkMode ? '1px solid #374151' : '1px solid #E5E7EB'
+                            borderTop: isDarkMode ? '1px solid #1E2447' : '1px solid #E5E7EB'
                         }}>
                             <button
                                 onClick={() => setCurrentQuestion(Math.max(0, currentQuestion - 1))}
                                 disabled={currentQuestion === 0}
                                 style={{
                                     padding: '12px 24px',
-                                    background: currentQuestion === 0 ? (isDarkMode ? '#374151' : '#E5E7EB') : (isDarkMode ? '#4B5563' : 'white'),
+                                    background: currentQuestion === 0 ? (isDarkMode ? '#1E2447' : '#E5E7EB') : (isDarkMode ? '#2D3250' : 'white'),
                                     color: isDarkMode ? 'white' : 'inherit',
                                     border: isDarkMode ? 'none' : '1px solid #D1D5DB',
                                     borderRadius: '8px',
@@ -848,7 +997,7 @@ export function StudentPage() {
                                     onClick={() => setCurrentQuestion(currentQuestion + 1)}
                                     style={{
                                         padding: '12px 24px',
-                                        background: '#4F46E5',
+                                        background: '#7C3AED',
                                         color: 'white',
                                         border: 'none',
                                         borderRadius: '8px',
@@ -864,7 +1013,7 @@ export function StudentPage() {
                                     disabled={isSubmitting || answeredCount < questions.length}
                                     style={{
                                         padding: '12px 24px',
-                                        background: (isSubmitting || answeredCount < questions.length) ? '#9CA3AF' : '#059669',
+                                        background: (isSubmitting || answeredCount < questions.length) ? '#9CA3AF' : '#10B981',
                                         color: 'white',
                                         border: 'none',
                                         borderRadius: '8px',
@@ -885,7 +1034,7 @@ export function StudentPage() {
                             justifyContent: 'center',
                             marginTop: '24px',
                             paddingTop: '24px',
-                            borderTop: isDarkMode ? '1px solid #374151' : '1px solid #E5E7EB'
+                            borderTop: isDarkMode ? '1px solid #1E2447' : '1px solid #E5E7EB'
                         }}>
                             {questions.map((q: Question, idx: number) => {
                                 const isAnswered = answers[q.id.toString()];
@@ -900,8 +1049,8 @@ export function StudentPage() {
                                             height: '36px',
                                             borderRadius: '50%',
                                             border: 'none',
-                                            background: isCurrent ? '#4F46E5' : isAnswered ? '#059669' : (isDarkMode ? '#374151' : '#E5E7EB'),
-                                            color: (isCurrent || isAnswered) ? 'white' : (isDarkMode ? '#D1D5DB' : '#374151'),
+                                            background: isCurrent ? '#7C3AED' : isAnswered ? '#10B981' : (isDarkMode ? '#1E2447' : '#E5E7EB'),
+                                            color: (isCurrent || isAnswered) ? 'white' : (isDarkMode ? '#D1D5DB' : '#1E2447'),
                                             fontWeight: '500',
                                             cursor: 'pointer'
                                         }}
@@ -925,7 +1074,7 @@ export function StudentPage() {
                         right: '24px',
                         maxWidth: '280px',
                         padding: '12px 16px',
-                        background: isDarkMode ? '#374151' : 'white',
+                        background: isDarkMode ? '#1E2447' : 'white',
                         borderRadius: '16px 16px 4px 16px',
                         boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
                         cursor: 'pointer',
@@ -933,33 +1082,52 @@ export function StudentPage() {
                         zIndex: 999
                     }}
                 >
-                    <p style={{ fontSize: '13px', color: isDarkMode ? 'white' : '#1F2937', margin: 0, lineHeight: 1.4 }}>
+                    <p style={{ fontSize: '13px', color: isDarkMode ? 'white' : '#131629', margin: 0, lineHeight: 1.4 }}>
                         🤖 {latestBubble.length > 100 ? latestBubble.slice(0, 100) + '...' : latestBubble}
                     </p>
                 </div>
             )}
 
             {/* Floating Chat Button */}
+            <style>{`
+                @keyframes float-chat {
+                    0%, 100% { transform: translateY(0); }
+                    50% { transform: translateY(-5px); }
+                }
+                @keyframes pulse-glow {
+                    0%, 100% { box-shadow: 0 4px 20px rgba(124, 58, 237, 0.4); }
+                    50% { box-shadow: 0 4px 35px rgba(124, 58, 237, 0.6); }
+                }
+            `}</style>
             <button
                 onClick={() => { setIsChatOpen(!isChatOpen); setLatestBubble(null); }}
                 style={{
                     position: 'fixed',
                     bottom: '24px',
                     right: '24px',
-                    width: '60px',
-                    height: '60px',
+                    width: '64px',
+                    height: '64px',
                     borderRadius: '50%',
-                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    background: 'linear-gradient(135deg, #7C3AED 0%, #A855F7 100%)',
                     color: 'white',
-                    border: 'none',
-                    boxShadow: '0 4px 20px rgba(102, 126, 234, 0.4)',
+                    border: '2px solid rgba(168, 85, 247, 0.3)',
+                    boxShadow: '0 4px 25px rgba(124, 58, 237, 0.5)',
                     cursor: 'pointer',
-                    fontSize: '24px',
+                    fontSize: '28px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     zIndex: 1000,
-                    transition: 'transform 0.2s'
+                    transition: 'all 0.3s ease',
+                    animation: isChatOpen ? 'none' : 'float-chat 3s ease-in-out infinite, pulse-glow 2s ease-in-out infinite'
+                }}
+                onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'scale(1.1)';
+                    e.currentTarget.style.boxShadow = '0 6px 35px rgba(124, 58, 237, 0.6)';
+                }}
+                onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.boxShadow = '0 4px 25px rgba(124, 58, 237, 0.5)';
                 }}
             >
                 {isChatOpen ? '✕' : '🤖'}
@@ -971,9 +1139,10 @@ export function StudentPage() {
                     position: 'fixed',
                     bottom: '100px',
                     right: '24px',
-                    width: '360px',
-                    height: '500px',
-                    background: isDarkMode ? '#1F2937' : 'white',
+                    width: '380px',
+                    height: '520px',
+                    background: isDarkMode ? 'rgba(19, 22, 41, 0.95)' : 'white',
+                    backdropFilter: 'blur(20px)',
                     borderRadius: '16px',
                     boxShadow: '0 10px 40px rgba(0,0,0,0.2)',
                     display: 'flex',
@@ -984,7 +1153,7 @@ export function StudentPage() {
                     {/* Chat Header */}
                     <div style={{
                         padding: '16px 20px',
-                        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                        background: 'linear-gradient(135deg, #7C3AED 0%, #A855F7 100%)',
                         color: 'white'
                     }}>
                         <h3 style={{ fontSize: '16px', fontWeight: '600', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1015,8 +1184,8 @@ export function StudentPage() {
                                 <div style={{
                                     padding: '10px 14px',
                                     borderRadius: msg.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
-                                    background: msg.role === 'user' ? '#4F46E5' : (isDarkMode ? '#374151' : '#F3F4F6'),
-                                    color: msg.role === 'user' ? 'white' : (isDarkMode ? 'white' : '#1F2937'),
+                                    background: msg.role === 'user' ? '#7C3AED' : (isDarkMode ? '#1E2447' : '#F3F4F6'),
+                                    color: msg.role === 'user' ? 'white' : (isDarkMode ? 'white' : '#131629'),
                                     fontSize: '13px',
                                     lineHeight: '1.4'
                                 }}>
@@ -1029,7 +1198,7 @@ export function StudentPage() {
                                 <div style={{
                                     padding: '10px 14px',
                                     borderRadius: '14px 14px 14px 4px',
-                                    background: isDarkMode ? '#374151' : '#F3F4F6',
+                                    background: isDarkMode ? '#1E2447' : '#F3F4F6',
                                     color: '#6B7280',
                                     fontSize: '13px'
                                 }}>
@@ -1043,7 +1212,7 @@ export function StudentPage() {
                     {/* Suggested Prompts */}
                     <div style={{
                         padding: '10px 14px',
-                        borderTop: isDarkMode ? '1px solid #374151' : '1px solid #E5E7EB',
+                        borderTop: isDarkMode ? '1px solid #1E2447' : '1px solid #E5E7EB',
                         display: 'flex',
                         flexWrap: 'wrap',
                         gap: '8px',
@@ -1056,9 +1225,9 @@ export function StudentPage() {
                                 style={{
                                     width: 'calc(50% - 4px)', // Force 2 items per row (accounting for gap)
                                     padding: '6px 10px',
-                                    background: isDarkMode ? '#312E81' : '#EEF2FF',
-                                    color: isDarkMode ? '#818CF8' : '#4F46E5',
-                                    border: isDarkMode ? '1px solid #4338CA' : '1px solid #C7D2FE',
+                                    background: isDarkMode ? '#3B2E81' : '#EDE9FE',
+                                    color: isDarkMode ? '#A78BFA' : '#7C3AED',
+                                    border: isDarkMode ? '1px solid #6D28D9' : '1px solid #C4B5FD',
                                     borderRadius: '12px',
                                     fontSize: '11px',
                                     cursor: isChatLoading ? 'not-allowed' : 'pointer',
@@ -1076,7 +1245,7 @@ export function StudentPage() {
                     {/* Chat Input */}
                     <div style={{
                         padding: '12px',
-                        borderTop: isDarkMode ? '1px solid #374151' : '1px solid #E5E7EB',
+                        borderTop: isDarkMode ? '1px solid #1E2447' : '1px solid #E5E7EB',
                         display: 'flex',
                         gap: '8px'
                     }}>
@@ -1097,8 +1266,8 @@ export function StudentPage() {
                                 flex: 1,
                                 padding: '10px',
                                 borderRadius: '8px',
-                                border: isDarkMode ? '1px solid #4B5563' : '1px solid #E5E7EB',
-                                background: isDarkMode ? '#374151' : 'white',
+                                border: isDarkMode ? '1px solid #2D3250' : '1px solid #E5E7EB',
+                                background: isDarkMode ? '#1E2447' : 'white',
                                 color: isDarkMode ? 'white' : 'inherit',
                                 fontSize: '13px',
                                 outline: 'none'
@@ -1110,8 +1279,8 @@ export function StudentPage() {
                             style={{
                                 padding: '10px 14px',
                                 background: (isChatLoading || !chatInput.trim())
-                                    ? (isDarkMode ? '#374151' : '#E5E7EB')
-                                    : '#4F46E5',
+                                    ? (isDarkMode ? '#1E2447' : '#E5E7EB')
+                                    : '#7C3AED',
                                 color: (isChatLoading || !chatInput.trim())
                                     ? '#9CA3AF'
                                     : 'white',

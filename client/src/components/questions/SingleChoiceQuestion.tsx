@@ -1,6 +1,7 @@
 import React from 'react';
 import { Question } from '../../types';
 import { QuestionMedia } from './QuestionMedia';
+import { LatexText } from '../LatexText';
 
 interface SingleChoiceProps {
     question: Question;
@@ -30,7 +31,7 @@ export const SingleChoiceQuestion: React.FC<SingleChoiceProps> = ({
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {/* Question Text */}
             <div style={{ fontSize: '15px', fontWeight: '600', lineHeight: '1.5', color: isDarkMode ? '#F3F4F6' : '#111827' }}>
-                {question.text}
+                <LatexText>{question.text}</LatexText>
             </div>
 
             {/* Media */}
@@ -78,7 +79,7 @@ export const SingleChoiceQuestion: React.FC<SingleChoiceProps> = ({
                         }}>
                             {answerValue}.
                         </span>
-                        {option}
+                        <LatexText>{option}</LatexText>
                         {isCorrect && <span style={{ marginLeft: 'auto', color: '#059669' }}>✅</span>}
                     </button>
                 );

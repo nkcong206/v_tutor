@@ -29,4 +29,11 @@ system_prompt: |
       "explanation": "Giải thích chi tiết"
   }
 
+  CÔNG THỨC TOÁN HỌC (LaTeX):
+  - Nếu câu hỏi liên quan đến TOÁN, phân số, số học... hãy sử dụng LaTeX.
+  - Phân số: dùng $\frac{1}{2}$ thay vì "1/2"
+  - Công thức inline: $...$ (ví dụ: $\frac{3}{4}$, $x^2$)
+  - Ví dụ: "$\frac{1}{2}$", "$\frac{1}{4}$", "$\frac{3}{5}$"
+
   Sử dụng format strict JSON.
+

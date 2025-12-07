@@ -51,19 +51,71 @@ class BaseQuestionGenerator(ABC):
         system_prompt: str,
         user_prompt: str,
         response_model: Type[AnyQuestion],
-        temperature: float = 0.7
+        temperature: float = 0.7,
+        max_retries: int = 3
     ) -> Optional[AnyQuestion]:
         """
         Generate a structured question using the new service.
+        Includes LaTeX validation with retry mechanism.
+        
+        Args:
+            system_prompt: The system prompt for LLM
+            user_prompt: The user prompt for LLM
+            response_model: Pydantic model for structured output
+            temperature: LLM temperature
+            max_retries: Maximum retries for invalid LaTeX (default 3)
+            
+        Returns:
+            Generated question or None if failed
         """
         from app.services.llm_service import llm_service
+        from app.services.latex_validator import validate_question_latex
         
-        return llm_service.generate_response(
-            response_model=response_model,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            temperature=temperature
-        )
+        current_user_prompt = user_prompt
+        
+        for attempt in range(max_retries):
+            result = llm_service.generate_response(
+                response_model=response_model,
+                system_prompt=system_prompt,
+                user_prompt=current_user_prompt,
+                temperature=temperature
+            )
+            
+            if result is None:
+                print(f"❌ LLM generation failed on attempt {attempt + 1}")
+                return None
+            
+            # Validate LaTeX in the generated question
+            question_dict = result.model_dump()
+            is_valid, errors = validate_question_latex(question_dict)
+            
+            if is_valid:
+                if attempt > 0:
+                    print(f"✅ LaTeX validation passed on attempt {attempt + 1}")
+                return result
+            
+            # LaTeX is invalid - prepare retry prompt
+            if attempt < max_retries - 1:
+                error_details = "\n".join(errors)
+                print(f"⚠️ LaTeX validation failed (attempt {attempt + 1}/{max_retries}):\n{error_details}")
+                
+                current_user_prompt = f"""
+{user_prompt}
+
+⚠️ QUAN TRỌNG - PHẢN HỒI LỖI LATEX:
+Câu hỏi bạn vừa tạo có lỗi cú pháp LaTeX. Hãy sửa lại:
+
+Lỗi phát hiện:
+{error_details}
+
+Hãy tạo lại câu hỏi với cú pháp LaTeX hợp lệ.
+Đảm bảo các công thức được đặt trong $...$ (inline) hoặc $$...$$ (block).
+"""
+            else:
+                print(f"❌ LaTeX validation failed after {max_retries} attempts. Returning result anyway.")
+                return result
+        
+        return None
 
     # Legacy method kept for compatibility but warning added
     def _call_llm(

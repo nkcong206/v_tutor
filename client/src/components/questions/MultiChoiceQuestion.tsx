@@ -1,6 +1,7 @@
 import React from 'react';
 import { Question } from '../../types';
 import { QuestionMedia } from './QuestionMedia';
+import { LatexText } from '../LatexText';
 
 interface MultiChoiceProps {
     question: Question;
@@ -36,7 +37,7 @@ export const MultiChoiceQuestion: React.FC<MultiChoiceProps> = ({
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {/* Question Text */}
             <div style={{ fontSize: '15px', fontWeight: '600', lineHeight: '1.5', color: isDarkMode ? '#F3F4F6' : '#111827' }}>
-                {question.text}
+                <LatexText>{question.text}</LatexText>
             </div>
 
             {/* Media */}
@@ -91,7 +92,7 @@ export const MultiChoiceQuestion: React.FC<MultiChoiceProps> = ({
                         }}>
                             {(isSelected || isCorrect) && '✓'}
                         </div>
-                        {option}
+                        <LatexText>{option}</LatexText>
                     </button>
                 );
             })}

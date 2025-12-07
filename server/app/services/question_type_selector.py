@@ -34,6 +34,12 @@ async def select_question_types(
     """
     available_types = get_available_types(subject)
     
+    # IMPORTANT: Exclude fill_in_blanks for math subject
+    # Math answers require LaTeX which doesn't work well with fill-in-blanks format
+    is_math = subject.lower() in ['math', 'toán', 'toan', 'mathematics']
+    if is_math:
+        available_types = [t for t in available_types if 'fill_in_blanks' not in t]
+    
     # Get prompt from YAML and interpolate variables
     from app.services.prompt_management import get_system_prompt
     system_prompt = get_system_prompt(
@@ -41,6 +47,10 @@ async def select_question_types(
         question_count=question_count,
         available_types=json.dumps(available_types, ensure_ascii=False)
     )
+    
+    # Add math-specific instruction
+    if is_math:
+        system_prompt += "\n\nLƯU Ý QUAN TRỌNG: Môn Toán không sử dụng dạng fill_in_blanks vì công thức toán học không hiển thị tốt."
 
     user_prompt = f"Chủ đề: {prompt}\nSố câu: {question_count}"
     
@@ -71,7 +81,10 @@ async def select_question_types(
         # Validate types are in available list
         validated_types = []
         for t in types:
-            if t in available_types:
+            # Skip fill_in_blanks for math
+            if is_math and 'fill_in_blanks' in t:
+                validated_types.append("single_choice")
+            elif t in available_types:
                 validated_types.append(t)
             else:
                 # Fallback to single_choice
@@ -86,14 +99,21 @@ async def select_question_types(
         # ENFORCE DIVERSITY: If all same type and count >= 3, mix it up
         if question_count >= 3 and len(set(validated_types)) == 1:
             print(f"⚠️ All same type detected, enforcing diversity...")
-            diverse_types = ["single_choice", "multi_choice", "fill_in_blanks"]
+            # Choose diverse types based on subject
+            if is_math:
+                diverse_types = ["single_choice", "multi_choice"]  # No fill_in_blanks for math
+            else:
+                diverse_types = ["single_choice", "multi_choice", "fill_in_blanks"]
             validated_types = [diverse_types[i % len(diverse_types)] for i in range(question_count)]
         
         return validated_types
         
     except Exception as e:
         print(f"❌ Error selecting question types: {e}")
-        # Fallback: diverse mix instead of all single choice
-        diverse_fallback = ["single_choice", "multi_choice", "fill_in_blanks"]
+        # Fallback: diverse mix based on subject
+        if is_math:
+            diverse_fallback = ["single_choice", "multi_choice"]
+        else:
+            diverse_fallback = ["single_choice", "multi_choice", "fill_in_blanks"]
         return [diverse_fallback[i % len(diverse_fallback)] for i in range(question_count)]
 
